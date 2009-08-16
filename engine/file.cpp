@@ -6,7 +6,7 @@
 #include <list>
 #include <vector>
 #include <algorithm>
-#include <sstream>
+#include <cctype>
 using namespace std;
 #include "file.h"
 #include "filesegment.h"
@@ -27,6 +27,11 @@ File::~File()
 	CloseLock(&gc_lock_);
 }
 
+bool File::IsFinished()
+{
+	return false; //FIXME
+}
+
 bool File::Start()
 {
 	downloaded_size_ = 0;
@@ -37,10 +42,6 @@ bool File::Start()
 
 	assert(!updated);
 
-
-
-
-
 	return false;
 }
 
@@ -50,19 +51,25 @@ static bool ParseParameters(std::vector <BYTE> buf, __out unsigned int& thread_c
 	string str(buf.begin(), buf.end());
 	bool thread_count_read = false;
 	md5_list.clear();
-	const char newline[] = "\r\n";
+	const char newline[] = "\n";
 	for (size_t pos = 0; pos < str.size(); )
 	{
-		size_t new_pos = str.find(newline, pos + 1);
+		size_t new_pos = str.find(newline, pos);
 		if (-1 == new_pos)
-			break;
+			new_pos = str.size();
 		if (!thread_count_read)
 		{
 			thread_count = atoi((str.substr(pos, new_pos - pos)).c_str());
 			thread_count_read = true;
 		}
 		else
-			md5_list.push_back(str.substr(pos, new_pos - pos));
+		{
+			string md5_str = str.substr(pos, new_pos - pos);
+			std::transform(md5_str.begin(), md5_str.end(), md5_str.begin(), std::toupper);
+			md5_list.push_back(md5_str);
+		}
+		if (new_pos == str.size())
+			break;
 		pos = new_pos + sizeof(newline) - 1;
 	}
 	
@@ -118,6 +125,8 @@ bool File::GetDownloadParameters(__out bool& updated)
 	if (!get_param_result)
 		return false;
 
+	updated = false;
+
 	if (md5_list_.size() != 0)
 	{
 		// If parameters already exist: check new parameters against existing ones
@@ -138,8 +147,7 @@ bool File::GetDownloadParameters(__out bool& updated)
 	}
 
 	// Update parameters 
-	md5_list_.clear();
-	copy(md5_list.begin(), md5_list.end(), md5_list_.begin());
+	md5_list_.assign(md5_list.begin(), md5_list.end());
 	thread_count_ = thread_count;
 
 	return true;

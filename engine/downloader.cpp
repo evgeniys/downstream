@@ -71,10 +71,10 @@ bool Downloader::IsEnoughFreeSpace()
 	{
 		TCHAR curr_dir[MAX_PATH];
 		GetCurrentDirectory(MAX_PATH, curr_dir);
-		disk_name = (StlString(curr_dir)).substr(0, 2);
+		disk_name = (StlString(curr_dir)).substr(0, 3);
 	}
 	else
-		disk_name = folder_name_.substr(0, 2);
+		disk_name = folder_name_.substr(0, 3);
 	DWORD sectors_per_cluster, bytes_per_sector, free_cluster_count, total_cluster_count;
 	if (GetDiskFreeSpace(disk_name.c_str(), &sectors_per_cluster, &bytes_per_sector, &free_cluster_count, &total_cluster_count))
 	{
@@ -98,7 +98,7 @@ void Downloader::Run()
 	// Load state.
 	bool first_start = !state_.Load();	
 
-	if (first_start)
+	if (first_start || !state_.GetValue(_T("folder_name"), folder_name_))
 	{
 		if (!SelectFolderName())
 			return;
@@ -124,6 +124,8 @@ bool Downloader::PerformDownload(const string& url)
 {
 	StlString tmp, fname, wurl;
 
+
+
 	wurl = StlString(url.begin(), url.end());
 
 	size_t pos = wurl.find_last_of(_T('/'));
@@ -134,9 +136,24 @@ bool Downloader::PerformDownload(const string& url)
 		return false;
 	}
 
-	fname = folder_name_ + wurl.substr(pos + 1);
+	tmp = wurl.substr(pos + 1);
+	size_t x = folder_name_.size();
+	fname = folder_name_;
+	
+	if (fname.substr(fname.size() - 1, 1) != StlString(_T("\\")))
+		fname += _T("\\");
+	fname += tmp;
 
 	File file(wurl, fname);
+
+	file.Start();
+
+	for ( ; ; )
+	{
+		if (file.IsFinished())
+			break;
+		Sleep(1000);
+	}
 
 	return true;
 }

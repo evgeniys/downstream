@@ -27,7 +27,11 @@ bool State::Load()
 		if (!_fgetts(&buf[0], (int)buf.size() - 1, f))
 			break;
 
+		size_t len = _tcslen(&buf[0]);
 		StlString line = StlString(buf.begin(), buf.end());
+		line.resize(len);
+		if (line.find_first_of(_T('\n')) == line.size() - 1)
+			line.resize(line.size() - 1);
 		size_t pos;
 		if (StlString::npos != (pos = line.find(_T('='))))
 		{
