@@ -33,9 +33,8 @@ private:
 	State state_;
 
 	bool SelectFolderName(void);
-	static void DownloadThread( void *arg );
+
 	bool IsEnoughFreeSpace(void);
-	void UpdateStateFromServer();
 
 	void PerformDownload(const std::string& url);
 };

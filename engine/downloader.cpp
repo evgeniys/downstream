@@ -119,23 +119,6 @@ void Downloader::Run()
 
 }
 
-#if 0
-void Downloader::UpdateStateFromServer()
-{
-	int thread_count = 20;//FIXME: get it from server
-
-	TCHAR thread_count_str[0x100];
-	_itot(thread_count, thread_count_str, 10);
-	state_.SetValue(_T("thread_count"), StlString(&thread_count_str[0]));
-}
-
-void Downloader::DownloadThread(void *arg)
-{
-	Downloader *_this = (Downloader*)arg;
-
-}
-#endif
-
 void Downloader::PerformDownload(const StlString& url)
 {
 	StlString tmp, fname;
