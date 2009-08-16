@@ -119,10 +119,13 @@ void Downloader::Run()
 
 }
 
-void Downloader::PerformDownload(const StlString& url)
+void Downloader::PerformDownload(const string& url)
 {
 	StlString tmp, fname;
-	size_t pos = url.find_last_of(_T())
+	size_t pos = url.find_last_of(_T('/'));
+	if (-1 == pos)
+		Message::Show(_T("Ошибка: неверно задан URL"));
+
 //	StlString fname = folder_name_ + 
 }
 
