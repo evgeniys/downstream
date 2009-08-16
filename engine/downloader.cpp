@@ -8,6 +8,7 @@
 
 #include "engine/downloader.h"
 #include "engine/state.h"
+#include "engine/file.h"
 #include "gui/message.h"
 #include "gui/progressdialog.h"
 #include "gui/selectfolder.h"
@@ -119,13 +120,24 @@ void Downloader::Run()
 
 }
 
-void Downloader::PerformDownload(const string& url)
+bool Downloader::PerformDownload(const string& url)
 {
-	StlString tmp, fname;
-	size_t pos = url.find_last_of(_T('/'));
-	if (-1 == pos)
-		Message::Show(_T("Ошибка: неверно задан URL"));
+	StlString tmp, fname, wurl;
 
-//	StlString fname = folder_name_ + 
+	wurl = StlString(url.begin(), url.end());
+
+	size_t pos = wurl.find_last_of(_T('/'));
+
+	if (-1 == pos || pos >= wurl.size() - 1)
+	{
+		Message::Show(StlString(_T("Ошибка: неверно задан URL ")) + wurl);
+		return false;
+	}
+
+	fname = folder_name_ + wurl.substr(pos + 1);
+
+	File file(wurl, fname);
+
+	return true;
 }
 

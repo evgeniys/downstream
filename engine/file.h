@@ -2,6 +2,7 @@
 #define _FILE_H_
 
 #include "common/types.h"
+#include <list>
 
 #define DOWNLOAD_RECEIVED_DATA 0x1
 #define DOWNLOAD_FAILURE       0x2

@@ -36,7 +36,7 @@ private:
 
 	bool IsEnoughFreeSpace(void);
 
-	void PerformDownload(const std::string& url);
+	bool PerformDownload(const std::string& url);
 };
 
 #endif
