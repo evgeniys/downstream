@@ -8,8 +8,7 @@ class ProgressDialog
 {
 public:
 	ProgressDialog(HANDLE pause_event, 
-				   HANDLE continue_event, 
-				   HANDLE close_event);
+				   HANDLE continue_event);
 	~ProgressDialog();
 	bool SetDisplayedData(const StlString &fname, 
 						  unsigned int speed,
@@ -24,9 +23,10 @@ private:
 
 	HANDLE pause_event_;
 	HANDLE continue_event_;
-	HANDLE close_event_;	
 	HANDLE create_event_;
 	HWND hwnd_;
+
+	HANDLE thread_handle_;
 
 	bool paused_;
 
@@ -36,7 +36,7 @@ private:
 		WPARAM wParam,
 		LPARAM lParam
 		);
-	static void ProgressDialogThread(void *arg);
+	static unsigned __stdcall ProgressDialogThread(void *arg);
 
 	bool Pause();
 

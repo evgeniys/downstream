@@ -9,13 +9,15 @@
 #include <algorithm>
 #include <cctype>
 using namespace std;
-#include "file.h"
-#include "filesegment.h"
+
+#include "engine/file.h"
+#include "engine/filesegment.h"
 
 // File part size (100 MB)
 #define PART_SIZE (100 * 1024 * 1024)
 
-File::File(const StlString &url, const StlString& fname)
+File::File(const StlString &url, const StlString& fname, 
+		   HANDLE pause_event, HANDLE continue_event, HANDLE stop_event)
 {
 	InitLock(&lock_);
 	InitLock(&gc_lock_);
@@ -23,21 +25,15 @@ File::File(const StlString &url, const StlString& fname)
 	fname_ = fname;
 	downloaded_size_ = 0;
 	thread_count_ = 1;
+	part_file_handle_ = INVALID_HANDLE_VALUE;
 
-	pause_event_ = CreateEvent(NULL, TRUE, FALSE, NULL);
-	continue_event_ = CreateEvent(NULL, TRUE, FALSE, NULL);
-	stop_event_ = CreateEvent(NULL, TRUE, FALSE, NULL);
+	pause_event_ = pause_event;
+	continue_event_ = continue_event;
+	stop_event_ = stop_event;
 }
 
 File::~File()
 {
-	if (pause_event_)
-		CloseHandle(pause_event_);
-	if (continue_event_)
-		CloseHandle(continue_event_);
-	if (stop_event_)
-		CloseHandle(stop_event_);
-
 	CloseLock(&lock_);
 	CloseLock(&gc_lock_);
 }
@@ -53,14 +49,14 @@ bool File::Start()
 	assert(!updated);
 
 	unsigned thread_id;
-	thread_ = (HANDLE)_beginthreadex(NULL, 0, FileThread, this, 0, &thread_id);
+	thread_handle_ = (HANDLE)_beginthreadex(NULL, 0, FileThread, this, 0, &thread_id);
 	
-	return thread_ != NULL;
+	return thread_handle_ != NULL;
 }
 
 bool File::IsFinished()
 {
-	return WAIT_OBJECT_0 == WaitForSingleObject(thread_, 0);
+	return WAIT_OBJECT_0 == WaitForSingleObject(thread_handle_, 0);
 }
 
 static bool ParseParameters(std::vector <BYTE> buf, __out unsigned int& thread_count, 
@@ -217,7 +213,7 @@ void File::NotifyDownloadProgress(FileSegment *sender, size_t offset, void *data
 	downloaded_size_ += size;
 	Unlock(&lock_);
 
-	//FIXME: bitmap and resuming support is postponed
+	//FIXME: resuming support is postponed
 }
 
 void File::NotifyDownloadStatus(FileSegment *sender, 
@@ -256,12 +252,38 @@ unsigned __stdcall File::FileThread(void *arg)
 	// Every file is split into parts
 
 	size_t part_count = file->file_size_ / PART_SIZE;
+	size_t offset = 0;
 
-	for (size_t part_num = 0; part_count; part_num++) 
-	{
-		//FIXME
-	}
+	for (size_t part_num = 0; part_count; part_num++, offset += PART_SIZE) 
+		file->DownloadPart(part_num, offset, PART_SIZE);
 
 	_endthreadex(0);
 	return 0;
+}
+
+static HANDLE OpenOrCreate(const StlString& fname)
+{
+	return CreateFile(fname.c_str(), GENERIC_WRITE, FILE_SHARE_READ, NULL, OPEN_ALWAYS, 
+		0, NULL);
+}
+
+bool File::DownloadPart(size_t part_num, size_t offset, size_t size)
+{
+	TCHAR part_num_str[10];
+	_itot(part_num + 1, part_num_str, 10);
+	StlString part_fname = fname_ + _T(".part") + part_num_str;
+
+	part_file_handle_ = OpenOrCreate(part_fname);
+	if (INVALID_HANDLE_VALUE)
+		return false;
+
+
+}
+
+void File::GetDownloadStatus(__out unsigned int& status, __out size_t& downloaded_size)
+{
+	Lock(&lock_);
+	downloaded_size = downloaded_size_;
+	status = 0;//FIXME
+	Unlock(&lock_);
 }

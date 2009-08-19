@@ -16,7 +16,8 @@ class FileSegment;
 class File
 {
 public:
-	File(const StlString &url, const StlString &fname);
+	File(const StlString &url, const StlString& fname, 
+		HANDLE pause_event, HANDLE continue_event, HANDLE stop_event);
 
 	virtual ~File();
 
@@ -26,8 +27,10 @@ public:
 	 *	Get status for currently downloaded file.
 	 *	Called from Downloader.
 	 */
-	bool GetDownloadStatus(__out unsigned int& status, 
+	void GetDownloadStatus(__out unsigned int& status, 
 						   __out size_t& downloaded_size);
+
+	size_t GetSize() { return file_size_; }
 
 protected:
 
@@ -63,7 +66,8 @@ private:
 	HANDLE continue_event_;
 	HANDLE stop_event_;
 
-	HANDLE thread_;
+	HANDLE part_file_handle_;
+	HANDLE thread_handle_;
 
 	std::list <class FileSegment *> gc_list_;
 	lock_t gc_lock_;
@@ -72,6 +76,8 @@ private:
 	bool GetDownloadParameters(__out bool& updated);
 
 	static unsigned __stdcall FileThread(void *arg);
+
+	bool DownloadPart(size_t part_num, size_t offset, size_t size);
 
 	/* Serialization */
 	friend class boost::serialization::access;

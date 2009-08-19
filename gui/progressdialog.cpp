@@ -75,13 +75,11 @@ INT_PTR CALLBACK ProgressDialog::ProgressDialogProc(
 }
 
 ProgressDialog::ProgressDialog(HANDLE pause_event, 
-							   HANDLE continue_event, 
-							   HANDLE close_event)
+							   HANDLE continue_event)
 
 {
 	if (dlg)
 		return;
-	close_event_ = close_event;
 	pause_event_ = pause_event;
 	continue_event_ = continue_event;
 	hwnd_ = NULL;
@@ -93,10 +91,10 @@ ProgressDialog::~ProgressDialog()
 	dlg = NULL;
 }
 
-void ProgressDialog::ProgressDialogThread(void *arg)
+unsigned __stdcall ProgressDialog::ProgressDialogThread(void *arg)
 {
 	if (!dlg)
-		return;
+		goto __end;
 	HINSTANCE instance = GetModuleHandle(NULL);
 	dlg->hwnd_ = CreateDialogParam(instance, 
 		MAKEINTRESOURCE(IDD_PROGRESS_DIALOG),
@@ -115,8 +113,9 @@ void ProgressDialog::ProgressDialogThread(void *arg)
 	}
 
 	DestroyWindow(dlg->hwnd_);
-
-	SetEvent(dlg->close_event_);
+__end:
+	_endthreadex(0);
+	return 0;
 }
 
 bool ProgressDialog::Create()
@@ -124,7 +123,9 @@ bool ProgressDialog::Create()
 	if (!dlg)
 		return false;
 	create_event_ = CreateEvent(NULL, TRUE, FALSE, NULL);
-	_beginthread(ProgressDialogThread, 0, this);
+	unsigned thread_id;
+	thread_handle_ = (HANDLE)
+		_beginthreadex(NULL, 0, ProgressDialogThread, this, 0, &thread_id);
 	WaitForSingleObject(create_event_, INFINITE);
 	return true;
 }
@@ -186,6 +187,6 @@ bool ProgressDialog::WaitForClosing()
 {
 	if (!dlg)
 		return false;
-	WaitForSingleObject(close_event_, INFINITE);
+	WaitForSingleObject(thread_handle_, INFINITE);
 	return true;
 }

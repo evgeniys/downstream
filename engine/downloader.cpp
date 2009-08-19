@@ -20,15 +20,26 @@ Downloader::Downloader(const UrlList &url_list, unsigned long long total_size)
 {
 	url_list_.resize(url_list.size());
 	copy(url_list.begin(), url_list.end(), url_list_.begin());
-	terminate_event_handle_ = CreateEvent(NULL, TRUE, FALSE, NULL);
-	init_ok_ = (NULL != terminate_event_handle_);
+	terminate_event_ = CreateEvent(NULL, TRUE, FALSE, NULL);
+	pause_event_ = CreateEvent(NULL, TRUE, FALSE, NULL);
+	continue_event_ = CreateEvent(NULL, TRUE, FALSE, NULL);
+	stop_event_ = CreateEvent(NULL, TRUE, FALSE, NULL);
+	progress_dlg_ = NULL;
+	init_ok_ = (NULL != terminate_event_);
 }
 
 Downloader::~Downloader(void)
 {
 	if (!init_ok_)
 		return;
-	CloseHandle(terminate_event_handle_);
+	if (terminate_event_)
+		CloseHandle(terminate_event_);
+	if (pause_event_)
+		CloseHandle(pause_event_);
+	if (continue_event_)
+		CloseHandle(continue_event_);
+	if (stop_event_)
+		CloseHandle(stop_event_);
 }
 
 bool IsValidFolder(StlString folder_name)
@@ -113,18 +124,22 @@ void Downloader::Run()
 
 	state_.Save();
 
-//	UpdateStateFromServer();
+	progress_dlg_ = new ProgressDialog(pause_event_, continue_event_);
+	progress_dlg_->Create();
+
+	total_progress_size_ = 0;
+
 	for (UrlList::iterator iter = url_list_.begin(); iter != url_list_.end(); iter++) 
 		PerformDownload(*iter);
 
-
+	progress_dlg_->Close();
+	progress_dlg_->WaitForClosing();
+	delete progress_dlg_;
 }
 
 bool Downloader::PerformDownload(const string& url)
 {
 	StlString tmp, fname, wurl;
-
-
 
 	wurl = StlString(url.begin(), url.end());
 
@@ -136,6 +151,9 @@ bool Downloader::PerformDownload(const string& url)
 		return false;
 	}
 
+	progress_dlg_->SetDisplayedData(wurl, 0, 0, 0);
+	progress_dlg_->Show(true);
+
 	tmp = wurl.substr(pos + 1);
 	size_t x = folder_name_.size();
 	fname = folder_name_;
@@ -144,17 +162,47 @@ bool Downloader::PerformDownload(const string& url)
 		fname += _T("\\");
 	fname += tmp;
 
-	File file(wurl, fname);
+	File file(wurl, fname, pause_event_, continue_event_, stop_event_);
 
 	file.Start();
 
+	SYSTEMTIME st_start, st_current;
+	FILETIME ft_start, ft_current;
+	GetSystemTime(&st_start);
+	SystemTimeToFileTime(&st_current, &ft_current);
+
+	unsigned int status;
+	size_t downloaded_size;
 	for ( ; ; )
 	{
+		GetSystemTime(&st_current);
+		SystemTimeToFileTime(&st_current, &ft_current);
+		file.GetDownloadStatus(status, downloaded_size);
+		ShowProgress(wurl, downloaded_size, file.GetSize(), ft_start, ft_current);
 		if (file.IsFinished())
 			break;
-		Sleep(1000);
+		Sleep(100);
 	}
+
+	total_progress_size_ += file.GetSize();
 
 	return true;
 }
+
+void Downloader::ShowProgress(const StlString& url, size_t downloaded_size, size_t file_size, 
+							  const FILETIME& ft_start, const FILETIME& ft_current)
+{
+	unsigned int total_progress, file_progress, speed;
+
+	total_progress = (100 * total_progress_size_ + downloaded_size) / total_size_;
+
+	file_progress = 100 * downloaded_size / file_size;
+
+	// Speed (KB/sec)
+	speed = (downloaded_size / 1024)
+		/ (((*(ULONG64*)&ft_current - *(ULONG64*)&ft_start) * 10 * 1000000));
+
+	progress_dlg_->SetDisplayedData(url, speed, file_progress, total_progress);
+}
+
 

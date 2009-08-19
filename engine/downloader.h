@@ -4,8 +4,9 @@
 #include "common/types.h"
 #include "engine/state.h"
 
-
 typedef std::vector <std::string> UrlList;
+
+class ProgressDialog;
 
 class Downloader
 {
@@ -22,7 +23,13 @@ private:
 	UrlList url_list_;
 	unsigned long long total_size_;
 
-	HANDLE terminate_event_handle_;
+	unsigned long long total_progress_size_;
+
+	HANDLE terminate_event_;
+
+	HANDLE pause_event_;
+	HANDLE continue_event_;
+	HANDLE stop_event_;
 
 	bool init_ok_;
 
@@ -35,6 +42,12 @@ private:
 	bool IsEnoughFreeSpace(void);
 
 	bool PerformDownload(const std::string& url);
+
+	ProgressDialog *progress_dlg_;
+
+	void ShowProgress(const StlString& url, size_t downloaded_size, size_t file_size,
+					  const FILETIME& ft_start, const FILETIME& ft_current);
+
 };
 
 #endif
