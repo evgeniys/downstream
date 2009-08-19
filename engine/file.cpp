@@ -277,7 +277,43 @@ bool File::DownloadPart(size_t part_num, size_t offset, size_t size)
 	if (INVALID_HANDLE_VALUE)
 		return false;
 
+	// Divide part into segments (1 segment per thread)
+	size_t seg_size = size / thread_count_;
+	segments_.resize(thread_count_);
+	size_t seg_offset = 0;
+	for (unsigned i = 0; i < thread_count_; i++, seg_offset += seg_size) 
+	{
+		FileSegment *seg = new FileSegment(this, url_, 
+			offset + seg_offset, seg_size, pause_event_, continue_event_, stop_event_);
+		seg->Start();
+		segments_[i] = seg;
+	}
 
+	for (;;) 
+	{
+		bool finished = true;
+		//FIXME: заменить на WaitForMultipleObjects
+		for (unsigned i = 0; i < thread_count_; i++)
+		{
+			FileSegment *seg = segments_[i];
+			if (!seg->IsFinished())
+			{
+				finished = false;
+				break;
+			}
+		}
+		if (finished)
+			break;
+		Sleep(500);
+	}
+
+	for (unsigned i = 0; i < thread_count_; i++) 
+	{
+		FileSegment *seg = segments_[i];
+		delete seg;
+	}
+
+	return true;
 }
 
 void File::GetDownloadStatus(__out unsigned int& status, __out size_t& downloaded_size)
