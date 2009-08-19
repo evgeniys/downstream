@@ -62,8 +62,10 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="wininet.lib"
+				AdditionalDependencies="wininet.lib libboost_serialization-vc80-mt-gd-1_39-debug.lib"
 				LinkIncremental="2"
+				AdditionalLibraryDirectories="&quot;$(ProjectDir)\lib&quot;"
+				IgnoreDefaultLibraryNames="libboost_serialization-vc80-mt-gd-1_39.lib"
 				GenerateDebugInformation="true"
 				SubSystem="2"
 				TargetMachine="1"
@@ -137,8 +139,10 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="wininet.lib"
+				AdditionalDependencies="wininet.lib libboost_serialization-vc80-mt-s-1_39-release.lib"
 				LinkIncremental="1"
+				AdditionalLibraryDirectories="&quot;$(ProjectDir)\lib&quot;"
+				IgnoreDefaultLibraryNames="libboost_serialization-vc80-mt-s-1_39.lib"
 				GenerateDebugInformation="true"
 				SubSystem="2"
 				OptimizeReferences="2"

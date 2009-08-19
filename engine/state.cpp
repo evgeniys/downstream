@@ -9,7 +9,6 @@ using namespace std;
 
 #include "engine/state.h"
 
-
 bool State::Load()
 {
 	FILE *f = fopen("downloader.ini", "rt");

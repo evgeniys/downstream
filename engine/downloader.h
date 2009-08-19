@@ -4,8 +4,6 @@
 #include "common/types.h"
 #include "engine/state.h"
 
-// File part size (100 MB)
-#define PART_SIZE (100 * 1024 * 1024)
 
 typedef std::vector <std::string> UrlList;
 

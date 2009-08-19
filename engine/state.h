@@ -2,10 +2,13 @@
 #define _STATE_H_
 
 #include "common/types.h"
+#include <boost/serialization/map.hpp>
 
 class State
 {
 public:
+
+	typedef std::map<StlString, StlString> MapType;
 
 	/**
 	 *	Load state from INI file. If no INI file yet then state is initialized. 
@@ -21,11 +24,17 @@ public:
 
 private:
 
-	typedef std::map<StlString, StlString> MapType;
-
 	MapType map_;
 
 	void InitDefault();
+
+	template<class Archive>
+	void serialize(Archive & ar, const unsigned int version)
+	{
+		if (version > 0)
+			return;
+		ar & map_;
+	}
 };
 
 #endif

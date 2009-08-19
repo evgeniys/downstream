@@ -3,6 +3,9 @@
 
 #include "common/types.h"
 #include <list>
+#include <boost/serialization/list.hpp>
+#include <boost/serialization/string.hpp>
+#include <boost/serialization/version.hpp>
 
 #define DOWNLOAD_RECEIVED_DATA 0x1
 #define DOWNLOAD_FAILURE       0x2
@@ -27,6 +30,7 @@ public:
 						   __out size_t& downloaded_size);
 
 protected:
+
 	/**
 	 *	Download notify callbacks. Called from FileSegment-s.
 	 *	These methods are thread-safe.
@@ -48,10 +52,18 @@ private:
 	StlString url_;
 	StlString fname_;
 	unsigned int thread_count_;
+	size_t file_size_;
 	size_t downloaded_size_;
 	std::list <std::string> md5_list_;
+	std::vector <FileSegment *> segments_;
 
 	friend class FileSegment;
+
+	HANDLE pause_event_;
+	HANDLE continue_event_;
+	HANDLE stop_event_;
+
+	HANDLE thread_;
 
 	std::list <class FileSegment *> gc_list_;
 	lock_t gc_lock_;
@@ -59,7 +71,24 @@ private:
 
 	bool GetDownloadParameters(__out bool& updated);
 
-	unsigned __stdcall FileThread(void *arg);
+	static unsigned __stdcall FileThread(void *arg);
+
+	/* Serialization */
+	friend class boost::serialization::access;
+	template<class Archive>
+	void serialize(Archive & ar, const unsigned int version)
+	{
+		if (version > 0)
+			return;
+		ar & url_;
+		ar & fname_;
+		ar & thread_count_;
+		ar & file_size_;
+		ar & downloaded_size_;
+		ar & md5_list_;
+		//TODO: fix serialization
+	}
+
 };
 
 #endif
