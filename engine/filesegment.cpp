@@ -6,9 +6,11 @@
 #include <vector>
 #include <list>
 using namespace std;
-#include "filesegment.h"
 
-#include "file.h"
+#include "engine/filesegment.h"
+#include "engine/file.h"
+#include "common/consts.h"
+
 
 #define CHUNK_SIZE (16 * 1024)
 
@@ -24,6 +26,8 @@ FileSegment::FileSegment(File *file,
 {
 	thread_ = 0;
 	attempt_count_ = 0;
+	downloaded_size_ = 0;
+	SetStatus(DOWNLOAD_NOT_STARTED);
 }
 
 FileSegment::~FileSegment()
@@ -45,6 +49,12 @@ bool FileSegment::IsFinished()
 	return WAIT_OBJECT_0 == WaitForSingleObject(thread_, 0);
 }
 
+void FileSegment::SetStatus(unsigned int status)
+{
+	InterlockedExchange((volatile LONG*)&download_status_, status);
+	file_->NotifyDownloadStatus(this, status);
+}
+
 bool FileSegment::ReadChunk(HINTERNET url_handle, size_t position, size_t chunk_size, __out size_t& read_size)
 {
 	vector <BYTE> buf;
@@ -52,11 +62,12 @@ bool FileSegment::ReadChunk(HINTERNET url_handle, size_t position, size_t chunk_
 	if (InternetReadFile(url_handle, &buf[0], (DWORD)chunk_size, (LPDWORD)&read_size))
 	{
 		file_->NotifyDownloadProgress(this, position, &buf[0], read_size);
+		downloaded_size_ += read_size;
 		return true;
 	}
 	else
 	{
-		file_->NotifyDownloadStatus(this, DOWNLOAD_FAILURE);
+		SetStatus(DOWNLOAD_FAILURE);
 		return false;
 	}
 }
@@ -71,7 +82,7 @@ unsigned __stdcall  FileSegment::FileSegmentThread(void *arg)
 		PRE_CONFIG_INTERNET_ACCESS, NULL, NULL, 0);
 	if (!inet_handle)
 	{
-		seg->file_->NotifyDownloadStatus(seg, DOWNLOAD_FAILURE);
+		seg->SetStatus(DOWNLOAD_FAILURE);
 		goto __exit_thread;
 	}
 
@@ -80,6 +91,8 @@ unsigned __stdcall  FileSegment::FileSegmentThread(void *arg)
 
 	if (url_handle)
 	{
+		seg->SetStatus(DOWNLOAD_STARTED);
+
 		size_t position = seg->offset_;
 
 		DWORD set_ptr_result = InternetSetFilePointer(url_handle, (LONG)position, NULL, FILE_BEGIN, 0);
@@ -100,7 +113,7 @@ unsigned __stdcall  FileSegment::FileSegmentThread(void *arg)
 
 				if (!read_chunk_result || read_size != nr_to_read)
 				{
-					seg->file_->NotifyDownloadStatus(seg, DOWNLOAD_FAILURE);
+					seg->SetStatus(DOWNLOAD_FAILURE);
 					goto __finish;
 				}
 
@@ -119,10 +132,10 @@ unsigned __stdcall  FileSegment::FileSegmentThread(void *arg)
 				if (WAIT_OBJECT_0 == WaitForSingleObject(seg->stop_event_, 0))
 					break;
 			}
-			seg->file_->NotifyDownloadStatus(seg, DOWNLOAD_FINISHED);
+			seg->SetStatus(DOWNLOAD_FINISHED);
 		}
 		else
-			seg->file_->NotifyDownloadStatus(seg, DOWNLOAD_FAILURE);
+			seg->SetStatus(DOWNLOAD_FAILURE);
 __finish:
 		InternetCloseHandle(url_handle);
 	}

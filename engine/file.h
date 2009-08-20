@@ -7,11 +7,6 @@
 #include <boost/serialization/string.hpp>
 #include <boost/serialization/version.hpp>
 
-#define DOWNLOAD_NOT_STARTED   0x0
-#define DOWNLOAD_STARTED       0x1
-#define DOWNLOAD_FAILURE       0x2
-#define DOWNLOAD_FINISHED      0x3
-
 class FileSegment;
 
 class File
@@ -58,7 +53,8 @@ private:
 	std::list <std::string> md5_list_;
 	std::vector <FileSegment *> segments_;
 
-	unsigned int download_status_; // lock_ MUST be held when accessing this member
+	unsigned int download_status_;
+
 	size_t downloaded_size_; // lock_ MUST be held when accessing this member
 	
 
@@ -81,7 +77,9 @@ private:
 
 	// Abort download if unrecoverable error occurred during download. 
 	// Called from NotifyDownloadStatus.
-	void AbortDownload(unsigned int status);
+	void AbortDownload();
+
+	void SetStatus(unsigned int status);
 
 	/* Serialization */
 	friend class boost::serialization::access;
@@ -94,6 +92,7 @@ private:
 		ar & fname_;
 		ar & thread_count_;
 		ar & file_size_;
+		ar & download_status_;
 		ar & downloaded_size_;
 		ar & md5_list_;
 		//TODO: fix serialization

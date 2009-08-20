@@ -12,6 +12,7 @@ using namespace std;
 
 #include "engine/file.h"
 #include "engine/filesegment.h"
+#include "common/consts.h"
 
 // File part size (100 MB)
 #define PART_SIZE (100 * 1024 * 1024)
@@ -29,7 +30,7 @@ File::File(const StlString &url, const StlString& fname,
 	pause_event_ = pause_event;
 	continue_event_ = continue_event;
 	stop_event_ = stop_event;
-	download_status_ = DOWNLOAD_NOT_STARTED;
+	SetStatus(DOWNLOAD_NOT_STARTED);
 }
 
 File::~File()
@@ -231,7 +232,10 @@ void File::NotifyDownloadStatus(FileSegment *sender,
 		if (sender->GetAttemptCount() < MAX_ATTEMPT_COUNT)
 			sender->Start();
 		else
-			AbortDownload(status);
+		{
+			AbortDownload();
+			SetStatus(status);
+		}
 		break;
 	}
 }
@@ -250,10 +254,7 @@ unsigned __stdcall File::FileThread(void *arg)
 
 	// Now merge all parts
 	if (!file->MergeParts())
-	{
-		//FIXME handle error
-	}
-
+		file->SetStatus(DOWNLOAD_MERGE_FAILURE);
 
 	_endthreadex(0);
 	return 0;
@@ -335,9 +336,7 @@ bool File::DownloadPart(size_t part_num, size_t offset, size_t size)
 		segments_[i] = seg;
 	}
 
-	Lock(&lock_);
-	download_status_ = DOWNLOAD_STARTED;
-	Unlock(&lock_);
+	SetStatus(DOWNLOAD_STARTED);
 
 	vector<HANDLE> thread_handles;
 	thread_handles.resize(thread_count_);
@@ -379,17 +378,19 @@ bool File::DownloadPart(size_t part_num, size_t offset, size_t size)
 
 void File::GetDownloadStatus(__out unsigned int& status, __out size_t& downloaded_size)
 {
+	status = download_status_;
 	Lock(&lock_);
 	downloaded_size = downloaded_size_;
-	status = download_status_;
 	Unlock(&lock_);
 }
 
-void File::AbortDownload(unsigned int status)
+void File::AbortDownload()
 {
-	Lock(&lock_);
 	// Set stop event to finish all running FileSegment-s
-	SetEvent(stop_event_);
-	download_status_ = status;
-	Unlock(&lock_);
+	PulseEvent(stop_event_);
+}
+
+void File::SetStatus(unsigned int status)
+{
+	InterlockedExchange((volatile LONG*)&download_status_, status);
 }
