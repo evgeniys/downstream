@@ -97,6 +97,16 @@ bool Downloader::IsEnoughFreeSpace()
 	return false;
 }
 
+static bool IsPartOfMultipartArchive(const StlString& fname)
+{
+	return false;//FIXME
+}
+
+static bool UnpackFile(const StlString& fname)
+{
+	return false;//FIXME
+}
+
 void Downloader::Run()
 {
 	
@@ -129,15 +139,30 @@ void Downloader::Run()
 
 	total_progress_size_ = 0;
 
+	list <StlString> file_name_list;
+
 	for (UrlList::iterator iter = url_list_.begin(); iter != url_list_.end(); iter++) 
-		PerformDownload(*iter);
+	{
+		StlString file_name;
+		if (PerformDownload(*iter, file_name))
+			file_name_list.push_back(file_name);
+	}
+
+	// Process file_name list (try to unpack files)
+	for (list<StlString>::iterator iter = file_name_list.begin();
+		iter != file_name_list.end(); iter++) 
+	{
+		if (IsPartOfMultipartArchive(*iter))
+			continue;
+		UnpackFile(*iter);
+	}
 
 	progress_dlg_->Close();
 	progress_dlg_->WaitForClosing();
 	delete progress_dlg_;
 }
 
-bool Downloader::PerformDownload(const string& url)
+bool Downloader::PerformDownload(const string& url, __out StlString& file_name)
 {
 	StlString tmp, fname, wurl;
 
@@ -155,12 +180,13 @@ bool Downloader::PerformDownload(const string& url)
 	progress_dlg_->Show(true);
 
 	tmp = wurl.substr(pos + 1);
-	size_t x = folder_name_.size();
 	fname = folder_name_;
 	
 	if (fname.substr(fname.size() - 1, 1) != StlString(_T("\\")))
 		fname += _T("\\");
 	fname += tmp;
+
+	file_name = fname;
 
 	File file(wurl, fname, pause_event_, continue_event_, stop_event_);
 
@@ -194,13 +220,13 @@ void Downloader::ShowProgress(const StlString& url, size_t downloaded_size, size
 {
 	unsigned int total_progress, file_progress, speed;
 
-	total_progress = (100 * total_progress_size_ + downloaded_size) / total_size_;
+	total_progress = (unsigned int)((100 * total_progress_size_ + downloaded_size) / total_size_);
 
-	file_progress = 100 * downloaded_size / file_size;
+	file_progress = (unsigned int)(100 * downloaded_size / file_size);
 
 	// Speed (KB/sec)
-	speed = (downloaded_size / 1024)
-		/ (((*(ULONG64*)&ft_current - *(ULONG64*)&ft_start) * 10 * 1000000));
+	speed = (unsigned int)((downloaded_size / 1024)
+		/ (((*(ULONG64*)&ft_current - *(ULONG64*)&ft_start) * 10 * 1000000)));
 
 	progress_dlg_->SetDisplayedData(url, speed, file_progress, total_progress);
 }

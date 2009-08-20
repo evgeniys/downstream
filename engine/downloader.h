@@ -41,7 +41,7 @@ private:
 
 	bool IsEnoughFreeSpace(void);
 
-	bool PerformDownload(const std::string& url);
+	bool PerformDownload(const std::string& url, __out StlString& file_name);
 
 	ProgressDialog *progress_dlg_;
 

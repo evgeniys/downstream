@@ -7,7 +7,8 @@
 #include <boost/serialization/string.hpp>
 #include <boost/serialization/version.hpp>
 
-#define DOWNLOAD_RECEIVED_DATA 0x1
+#define DOWNLOAD_NOT_STARTED   0x0
+#define DOWNLOAD_STARTED       0x1
 #define DOWNLOAD_FAILURE       0x2
 #define DOWNLOAD_FINISHED      0x3
 
@@ -44,9 +45,7 @@ protected:
 								void *data, size_t size);
 
 	void NotifyDownloadStatus(FileSegment *sender, 
-							  unsigned int status, 
-							  uintptr_t arg1, 
-							  uintptr_t arg2);
+							  unsigned int status);
 
 
 
@@ -56,9 +55,12 @@ private:
 	StlString fname_;
 	unsigned int thread_count_;
 	size_t file_size_;
-	size_t downloaded_size_;
 	std::list <std::string> md5_list_;
 	std::vector <FileSegment *> segments_;
+
+	unsigned int download_status_; // lock_ MUST be held when accessing this member
+	size_t downloaded_size_; // lock_ MUST be held when accessing this member
+	
 
 	friend class FileSegment;
 
@@ -66,18 +68,20 @@ private:
 	HANDLE continue_event_;
 	HANDLE stop_event_;
 
-	HANDLE part_file_handle_;
+	HANDLE part_file_handle_; // lock_ MUST be held when accessing this file
 	HANDLE thread_handle_;
-
-	std::list <class FileSegment *> gc_list_;
-	lock_t gc_lock_;
-	void GarbageCollect();
 
 	bool GetDownloadParameters(__out bool& updated);
 
 	static unsigned __stdcall FileThread(void *arg);
 
 	bool DownloadPart(size_t part_num, size_t offset, size_t size);
+
+	bool MergeParts();
+
+	// Abort download if unrecoverable error occurred during download. 
+	// Called from NotifyDownloadStatus.
+	void AbortDownload(unsigned int status);
 
 	/* Serialization */
 	friend class boost::serialization::access;

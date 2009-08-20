@@ -22,10 +22,16 @@ public:
 	size_t GetOffset() { return offset_; }
 	size_t GetSize() { return size_; }
 
+	int GetAttemptCount() { return attempt_count_; }
+
+	HANDLE GetThreadHandle() { return thread_; } 
+
 private:
 	StlString url_;
 	size_t offset_;
 	size_t size_;
+
+	int attempt_count_;
 
 
 

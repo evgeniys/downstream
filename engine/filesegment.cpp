@@ -23,6 +23,7 @@ FileSegment::FileSegment(File *file,
  continue_event_(continue_event), stop_event_(stop_event)
 {
 	thread_ = 0;
+	attempt_count_ = 0;
 }
 
 FileSegment::~FileSegment()
@@ -33,6 +34,7 @@ FileSegment::~FileSegment()
 
 bool FileSegment::Start()
 {
+	attempt_count_++;
 	unsigned thread_id;
 	thread_ = (HANDLE)_beginthreadex(NULL, 0, FileSegmentThread, this, 0, &thread_id);
 	return thread_ != NULL;
@@ -54,7 +56,7 @@ bool FileSegment::ReadChunk(HINTERNET url_handle, size_t position, size_t chunk_
 	}
 	else
 	{
-		file_->NotifyDownloadStatus(this, DOWNLOAD_FAILURE, GetLastError(), 0);
+		file_->NotifyDownloadStatus(this, DOWNLOAD_FAILURE);
 		return false;
 	}
 }
@@ -69,7 +71,7 @@ unsigned __stdcall  FileSegment::FileSegmentThread(void *arg)
 		PRE_CONFIG_INTERNET_ACCESS, NULL, NULL, 0);
 	if (!inet_handle)
 	{
-		seg->file_->NotifyDownloadStatus(seg, DOWNLOAD_FAILURE, GetLastError(), 0);
+		seg->file_->NotifyDownloadStatus(seg, DOWNLOAD_FAILURE);
 		goto __exit_thread;
 	}
 
@@ -98,7 +100,7 @@ unsigned __stdcall  FileSegment::FileSegmentThread(void *arg)
 
 				if (!read_chunk_result || read_size != nr_to_read)
 				{
-					seg->file_->NotifyDownloadStatus(seg, DOWNLOAD_FAILURE, 0, 1);
+					seg->file_->NotifyDownloadStatus(seg, DOWNLOAD_FAILURE);
 					goto __finish;
 				}
 
@@ -117,10 +119,10 @@ unsigned __stdcall  FileSegment::FileSegmentThread(void *arg)
 				if (WAIT_OBJECT_0 == WaitForSingleObject(seg->stop_event_, 0))
 					break;
 			}
-			seg->file_->NotifyDownloadStatus(seg, DOWNLOAD_FINISHED, read_size_counter, 0);
+			seg->file_->NotifyDownloadStatus(seg, DOWNLOAD_FINISHED);
 		}
 		else
-			seg->file_->NotifyDownloadStatus(seg, DOWNLOAD_FAILURE, set_ptr_result, 0);
+			seg->file_->NotifyDownloadStatus(seg, DOWNLOAD_FAILURE);
 __finish:
 		InternetCloseHandle(url_handle);
 	}

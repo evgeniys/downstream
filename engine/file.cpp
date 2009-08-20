@@ -20,7 +20,6 @@ File::File(const StlString &url, const StlString& fname,
 		   HANDLE pause_event, HANDLE continue_event, HANDLE stop_event)
 {
 	InitLock(&lock_);
-	InitLock(&gc_lock_);
 	url_ = url;
 	fname_ = fname;
 	downloaded_size_ = 0;
@@ -30,12 +29,12 @@ File::File(const StlString &url, const StlString& fname,
 	pause_event_ = pause_event;
 	continue_event_ = continue_event;
 	stop_event_ = stop_event;
+	download_status_ = DOWNLOAD_NOT_STARTED;
 }
 
 File::~File()
 {
 	CloseLock(&lock_);
-	CloseLock(&gc_lock_);
 }
 
 bool File::Start()
@@ -208,41 +207,33 @@ bool File::GetDownloadParameters(__out bool& updated)
 
 void File::NotifyDownloadProgress(FileSegment *sender, size_t offset, void *data, size_t size)
 {
-	// Update total progress counter
 	Lock(&lock_);
+	// Update total progress counter
 	downloaded_size_ += size;
+	// Write data to file
+	SetFilePointer(part_file_handle_, sender->GetOffset() + offset, NULL, FILE_BEGIN);
+	DWORD nr_written;
+	WriteFile(part_file_handle_, data, size, &nr_written, NULL);
+	assert((size_t)nr_written == size);
 	Unlock(&lock_);
 
 	//FIXME: resuming support is postponed
 }
 
 void File::NotifyDownloadStatus(FileSegment *sender, 
-								unsigned int status, 
-								uintptr_t arg1, 
-								uintptr_t arg2)
+								unsigned int status)
 {
 	switch (status)
 	{
-	case DOWNLOAD_FINISHED:
-		Lock(&gc_lock_);
-		gc_list_.push_back(sender);
-		Unlock(&gc_lock_);
+	case DOWNLOAD_FAILURE:
+		// Try to restart this segment
+#		define MAX_ATTEMPT_COUNT 10
+		if (sender->GetAttemptCount() < MAX_ATTEMPT_COUNT)
+			sender->Start();
+		else
+			AbortDownload(status);
 		break;
-
 	}
-}
-
-void File::GarbageCollect()
-{
-	Lock(&gc_lock_);
-	while (!gc_list_.empty())
-	{
-		FileSegment	*seg = *(gc_list_.begin());
-		gc_list_.pop_front();
-		if (seg->IsFinished())
-			delete seg;
-	}
-	Unlock(&gc_lock_);
 }
 
 unsigned __stdcall File::FileThread(void *arg)
@@ -254,17 +245,72 @@ unsigned __stdcall File::FileThread(void *arg)
 	size_t part_count = file->file_size_ / PART_SIZE;
 	size_t offset = 0;
 
-	for (size_t part_num = 0; part_count; part_num++, offset += PART_SIZE) 
+	for (size_t part_num = 0; part_num < part_count; part_num++, offset += PART_SIZE) 
 		file->DownloadPart(part_num, offset, PART_SIZE);
+
+	// Now merge all parts
+	if (!file->MergeParts())
+	{
+		//FIXME handle error
+	}
+
 
 	_endthreadex(0);
 	return 0;
 }
 
-static HANDLE OpenOrCreate(const StlString& fname)
+static HANDLE OpenOrCreate(const StlString& fname, DWORD access)
 {
-	return CreateFile(fname.c_str(), GENERIC_WRITE, FILE_SHARE_READ, NULL, OPEN_ALWAYS, 
-		0, NULL);
+	return CreateFile(fname.c_str(), access, 
+		FILE_SHARE_READ, NULL, OPEN_ALWAYS, 0, NULL);
+}
+
+/**
+ *	Merge parts of downloaded file and delete them
+ */
+bool File::MergeParts()
+{
+
+	HANDLE file_handle = OpenOrCreate(fname_, GENERIC_WRITE);
+	if (INVALID_HANDLE_VALUE == file_handle)
+		return false;
+
+	size_t part_count = file_size_ / PART_SIZE;
+	size_t offset = 0;
+	size_t part_size = PART_SIZE;
+	vector <BYTE> buf;
+	buf.resize(part_size);
+	BOOL ret_val = TRUE;
+	for (size_t part_num = 0; part_num < part_count; part_num++, offset += PART_SIZE) 
+	{
+		TCHAR part_num_str[10];
+		_itot(part_num + 1, part_num_str, 10);
+		StlString part_fname = fname_ + _T(".part") + part_num_str;
+		HANDLE part_file_handle = OpenOrCreate(part_fname, GENERIC_READ);
+		if (INVALID_HANDLE_VALUE != part_file_handle)
+		{
+			part_size = GetFileSize(part_file_handle, NULL);
+
+			if (part_num != part_count - 1 && part_size != PART_SIZE)
+			{
+				ret_val = FALSE;
+				break;
+			}
+
+			ret_val = ret_val && ReadFile(part_file_handle, &buf[0], part_size, (LPDWORD)&part_size, NULL);
+			if (ret_val)
+				ret_val = ret_val && 
+					WriteFile(file_handle, &buf[0], part_size, (LPDWORD)&part_size, NULL);
+			CloseHandle(part_file_handle_);
+			if (!ret_val)
+				break;
+		}
+		DeleteFile(part_fname.c_str());
+	}
+
+	CloseHandle(file_handle);
+
+	return (FALSE != ret_val);
 }
 
 bool File::DownloadPart(size_t part_num, size_t offset, size_t size)
@@ -273,8 +319,8 @@ bool File::DownloadPart(size_t part_num, size_t offset, size_t size)
 	_itot(part_num + 1, part_num_str, 10);
 	StlString part_fname = fname_ + _T(".part") + part_num_str;
 
-	part_file_handle_ = OpenOrCreate(part_fname);
-	if (INVALID_HANDLE_VALUE)
+	part_file_handle_ = OpenOrCreate(part_fname, GENERIC_WRITE);
+	if (INVALID_HANDLE_VALUE == part_file_handle_)
 		return false;
 
 	// Divide part into segments (1 segment per thread)
@@ -289,6 +335,18 @@ bool File::DownloadPart(size_t part_num, size_t offset, size_t size)
 		segments_[i] = seg;
 	}
 
+	Lock(&lock_);
+	download_status_ = DOWNLOAD_STARTED;
+	Unlock(&lock_);
+
+	vector<HANDLE> thread_handles;
+	thread_handles.resize(thread_count_);
+	for (unsigned i = 0; i < thread_count_; i++) 
+		thread_handles[i] = segments_[i]->GetThreadHandle();
+
+#if 1
+	WaitForMultipleObjects(thread_count_, &thread_handles[0], TRUE, INFINITE);
+#else
 	for (;;) 
 	{
 		bool finished = true;
@@ -306,12 +364,15 @@ bool File::DownloadPart(size_t part_num, size_t offset, size_t size)
 			break;
 		Sleep(500);
 	}
+#endif
 
 	for (unsigned i = 0; i < thread_count_; i++) 
 	{
 		FileSegment *seg = segments_[i];
 		delete seg;
 	}
+
+	CloseHandle(part_file_handle_);
 
 	return true;
 }
@@ -320,6 +381,15 @@ void File::GetDownloadStatus(__out unsigned int& status, __out size_t& downloade
 {
 	Lock(&lock_);
 	downloaded_size = downloaded_size_;
-	status = 0;//FIXME
+	status = download_status_;
+	Unlock(&lock_);
+}
+
+void File::AbortDownload(unsigned int status)
+{
+	Lock(&lock_);
+	// Set stop event to finish all running FileSegment-s
+	SetEvent(stop_event_);
+	download_status_ = status;
 	Unlock(&lock_);
 }
