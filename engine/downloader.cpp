@@ -136,6 +136,7 @@ void Downloader::Run()
 
 	progress_dlg_ = new ProgressDialog(pause_event_, continue_event_);
 	progress_dlg_->Create();
+	progress_dlg_->Show(false);
 
 	total_progress_size_ = 0;
 
@@ -158,7 +159,7 @@ void Downloader::Run()
 	}
 
 	progress_dlg_->Close();
-	progress_dlg_->WaitForClosing();
+	progress_dlg_->WaitForClosing(INFINITE);
 	delete progress_dlg_;
 }
 
@@ -206,6 +207,8 @@ bool Downloader::PerformDownload(const string& url, __out StlString& file_name)
 		file.GetDownloadStatus(status, downloaded_size);
 		ShowProgress(wurl, downloaded_size, file.GetSize(), ft_start, ft_current);
 		if (file.IsFinished())
+			break;
+		if (progress_dlg_->WaitForClosing(0))
 			break;
 		Sleep(100);
 	}

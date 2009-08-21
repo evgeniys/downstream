@@ -14,6 +14,8 @@ using namespace std;
 #include "engine/filesegment.h"
 #include "common/consts.h"
 
+#define TEST
+
 // File part size (100 MB)
 #define PART_SIZE (100 * 1024 * 1024)
 
@@ -46,7 +48,9 @@ bool File::Start()
 	if (!GetDownloadParameters(updated))
 		return false;
 
+#ifndef TEST
 	assert(!updated);
+#endif
 
 	unsigned thread_id;
 	thread_handle_ = (HANDLE)_beginthreadex(NULL, 0, FileThread, this, 0, &thread_id);
@@ -122,8 +126,7 @@ static bool GetInternetFileSize(const StlString &url, __out size_t& file_size)
 }
 
 static bool GetParameters(const StlString &url, __out unsigned int& thread_count, 
-						  __out std::list<string>& md5_list, 
-						  __out size_t& file_size)
+						  __out std::list<string>& md5_list)
 {
 	StlString param_url = url + _T(".md5");
 	const StlString header = _T("Accept: */*");
@@ -154,8 +157,6 @@ static bool GetParameters(const StlString &url, __out unsigned int& thread_count
 
 	InternetCloseHandle(inet_handle);
 
-	if (ret_val)
-		ret_val = GetInternetFileSize(url, file_size);
 
 	return ret_val;
 }
@@ -171,10 +172,15 @@ bool File::GetDownloadParameters(__out bool& updated)
 	unsigned int thread_count;
 	list<string> md5_list;
 	size_t file_size;
+#ifndef TEST
 	bool get_param_result = GetParameters(url_, thread_count, md5_list, file_size);
 	if (!get_param_result)
 		return false;
+#endif
+	if (!GetInternetFileSize(url_, file_size))
+		return false;
 
+#ifndef TEST
 	updated = false;
 
 	if (md5_list_.size() != 0)
@@ -200,6 +206,8 @@ bool File::GetDownloadParameters(__out bool& updated)
 	// Update parameters 
 	md5_list_.assign(md5_list.begin(), md5_list.end());
 	thread_count_ = thread_count;
+#endif
+
 	file_size_ = file_size;
 
 	return true;
@@ -212,7 +220,7 @@ void File::NotifyDownloadProgress(FileSegment *sender, size_t offset, void *data
 	// Update total progress counter
 	downloaded_size_ += size;
 	// Write data to file
-	SetFilePointer(part_file_handle_, sender->GetOffset() + offset, NULL, FILE_BEGIN);
+	SetFilePointer(part_file_handle_, offset - sender->GetPartOffset(), NULL, FILE_BEGIN);
 	DWORD nr_written;
 	WriteFile(part_file_handle_, data, size, &nr_written, NULL);
 	assert((size_t)nr_written == size);
@@ -230,7 +238,7 @@ void File::NotifyDownloadStatus(FileSegment *sender,
 		// Try to restart this segment
 #		define MAX_ATTEMPT_COUNT 10
 		if (sender->GetAttemptCount() < MAX_ATTEMPT_COUNT)
-			sender->Start();
+			sender->Restart();//FIXME
 		else
 		{
 			AbortDownload();
@@ -247,14 +255,31 @@ unsigned __stdcall File::FileThread(void *arg)
 	// Every file is split into parts
 
 	size_t part_count = file->file_size_ / PART_SIZE;
+	if (file->file_size_ % PART_SIZE)
+		part_count++;
 	size_t offset = 0;
 
-	for (size_t part_num = 0; part_num < part_count; part_num++, offset += PART_SIZE) 
-		file->DownloadPart(part_num, offset, PART_SIZE);
+	file->SetStatus(DOWNLOAD_STARTED);
 
-	// Now merge all parts
-	if (!file->MergeParts())
-		file->SetStatus(DOWNLOAD_MERGE_FAILURE);
+	for (size_t part_num = 0; offset < file->file_size_; part_num++, offset += PART_SIZE) 
+	{
+		size_t part_size = PART_SIZE;
+		if (offset + PART_SIZE >= file->file_size_)
+			part_size = file->file_size_ - offset;
+		file->DownloadPart(part_num, offset, part_size);
+	}
+
+	unsigned int status;
+	size_t size;
+	file->GetDownloadStatus(status, size);
+	if (DOWNLOAD_FAILURE != status)
+	{
+		// Now merge all parts
+		if (!file->MergeParts())
+			file->SetStatus(DOWNLOAD_MERGE_FAILURE);
+		else
+			file->SetStatus(DOWNLOAD_FINISHED);
+	}
 
 	_endthreadex(0);
 	return 0;
@@ -277,6 +302,8 @@ bool File::MergeParts()
 		return false;
 
 	size_t part_count = file_size_ / PART_SIZE;
+	if (file_size_ % PART_SIZE)
+		part_count++;
 	size_t offset = 0;
 	size_t part_size = PART_SIZE;
 	vector <BYTE> buf;
@@ -302,11 +329,13 @@ bool File::MergeParts()
 			if (ret_val)
 				ret_val = ret_val && 
 					WriteFile(file_handle, &buf[0], part_size, (LPDWORD)&part_size, NULL);
-			CloseHandle(part_file_handle_);
-			if (!ret_val)
-				break;
+			CloseHandle(part_file_handle);
 		}
+
 		DeleteFile(part_fname.c_str());
+
+		if (!ret_val)
+			break;
 	}
 
 	CloseHandle(file_handle);
@@ -325,18 +354,19 @@ bool File::DownloadPart(size_t part_num, size_t offset, size_t size)
 		return false;
 
 	// Divide part into segments (1 segment per thread)
+	thread_count_ = 1;//test
 	size_t seg_size = size / thread_count_;
 	segments_.resize(thread_count_);
 	size_t seg_offset = 0;
 	for (unsigned i = 0; i < thread_count_; i++, seg_offset += seg_size) 
 	{
-		FileSegment *seg = new FileSegment(this, url_, 
-			offset + seg_offset, seg_size, pause_event_, continue_event_, stop_event_);
+		FileSegment *seg = new FileSegment(this, url_, offset,
+			offset + seg_offset, i == thread_count_ - 1 ? size - seg_offset : seg_size, 
+			pause_event_, continue_event_, stop_event_);
 		seg->Start();
 		segments_[i] = seg;
 	}
 
-	SetStatus(DOWNLOAD_STARTED);
 
 	vector<HANDLE> thread_handles;
 	thread_handles.resize(thread_count_);
@@ -368,6 +398,8 @@ bool File::DownloadPart(size_t part_num, size_t offset, size_t size)
 	for (unsigned i = 0; i < thread_count_; i++) 
 	{
 		FileSegment *seg = segments_[i];
+		if (seg->GetStatus() == DOWNLOAD_FAILURE)
+			SetStatus(DOWNLOAD_FAILURE);
 		delete seg;
 	}
 

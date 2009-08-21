@@ -17,7 +17,7 @@ public:
 	bool Create();
 	bool Show(bool show);
 	bool Close();
-	bool WaitForClosing();
+	bool WaitForClosing(DWORD timeout);
 
 private:
 

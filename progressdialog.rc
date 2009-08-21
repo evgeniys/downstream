@@ -62,7 +62,7 @@ BEGIN
     CONTROL         "",IDC_TOTAL_PROGRESS,"msctls_progress32",WS_BORDER,12,78,318,14
     CONTROL         "",IDC_FILE_PROGRESS,"msctls_progress32",WS_BORDER,12,42,318,14
     LTEXT           "Идет загрузка файлов.",IDC_STATIC,12,6,80,8
-    PUSHBUTTON      "Закрыть",IDC_BUTTON_CLOSE,264,102,62,14
+    PUSHBUTTON      "Закрыть",IDCANCEL,264,102,62,14
     LTEXT           "В данный момент загружается:",IDC_STATIC_FILE_NAME,12,18,107,8
     LTEXT           "Прогресс загрузки файла:",IDC_STATIC,12,30,90,8
     LTEXT           "Общий прогресс загрузки:",IDC_STATIC,12,66,91,8

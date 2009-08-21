@@ -1,9 +1,11 @@
 #include <windows.h>
-#include <stdio.h>
 #include <tchar.h>
 #include <string>
 #include <map>
 #include <vector>
+#include <fstream>
+#include <boost/archive/text_iarchive.hpp>
+#include <boost/archive/text_oarchive.hpp>
 
 using namespace std;
 
@@ -11,55 +13,34 @@ using namespace std;
 
 bool State::Load()
 {
-	FILE *f = fopen("downloader.ini", "rt");
-	if (!f)
-	{
-		InitDefault();
-		return false;
+	bool ret_val = true;
+	ifstream ifs;
+	try {
+		ifs.open("downloader.config", ios_base::in);
+		boost::archive::text_iarchive ia(ifs);
+		ia >> (*this);
+		ifs.close();
 	}
-
-	vector <TCHAR> buf;
-	buf.resize(0x1000);
-
-	for ( ; ; )
-	{
-		if (!_fgetts(&buf[0], (int)buf.size() - 1, f))
-			break;
-
-		size_t len = _tcslen(&buf[0]);
-		StlString line = StlString(buf.begin(), buf.end());
-		line.resize(len);
-		if (line.find_first_of(_T('\n')) == line.size() - 1)
-			line.resize(line.size() - 1);
-		size_t pos;
-		if (StlString::npos != (pos = line.find(_T('='))))
-		{
-			StlString key = line.substr(0, pos);
-			StlString value = line.substr(pos + 1);
-
-			map_[key] = value;
-		}
+	catch (...) {
+		ret_val = false;
 	}
-
-	fclose(f);
-
-	return true;
+	return ret_val;
 }
 
 bool State::Save()
 {
-	FILE *f = fopen("downloader.ini", "wt");
-	if (!f)
-		return false;
-	for (MapType::iterator iter = map_.begin(); iter != map_.end(); iter++) 
-		_ftprintf(f, _T("%s=%s\n"), iter->first.c_str(), iter->second.c_str());
-	fclose(f);
-	return true;
-}
-
-void State::InitDefault()
-{
-//	map_[_T("current_file")] = _T("");
+	bool ret_val = true;
+	ofstream ofs;
+	try {
+		ofs.open("downloader.config", ios_base::out);
+		boost::archive::text_oarchive oa(ofs);
+		oa << (*this);
+		ofs.close();
+	}
+	catch (...) {
+		ret_val = false;
+	}
+	return ret_val;
 }
 
 bool State::GetValue(const StlString &key_name, __out StlString &value)

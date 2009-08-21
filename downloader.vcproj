@@ -46,7 +46,7 @@
 				BasicRuntimeChecks="3"
 				RuntimeLibrary="3"
 				UsePrecompiledHeader="0"
-				WarningLevel="4"
+				WarningLevel="3"
 				WarnAsError="false"
 				Detect64BitPortabilityProblems="true"
 				DebugInformationFormat="4"
@@ -310,6 +310,10 @@
 				Name="headers"
 				>
 				<File
+					RelativePath=".\common\logging.h"
+					>
+				</File>
+				<File
 					RelativePath=".\common\types.h"
 					>
 				</File>
@@ -317,6 +321,10 @@
 			<Filter
 				Name="source"
 				>
+				<File
+					RelativePath=".\common\logging.cpp"
+					>
+				</File>
 				<File
 					RelativePath=".\common\main.cpp"
 					>

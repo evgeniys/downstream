@@ -9,20 +9,23 @@ class FileSegment
 public:
 	FileSegment(class File *file,
 				const StlString& url, 
-				size_t offset, size_t size, 
+				size_t part_offset,
+				size_t seg_offset, size_t size, 
 				HANDLE pause_event,
 				HANDLE continue_event,
 				HANDLE stop_event);
 
 	virtual ~FileSegment();
-	
+
+	void Restart();
 	bool Start();
 	bool IsFinished();
 
 	StlString &GetUrl() { return url_; }
-	size_t GetOffset() { return offset_; }
+	size_t GetPartOffset() { return part_offset_; }
+	size_t GetSegOffset() { return seg_offset_; }
 	size_t GetSize() { return size_; }
-	size_t GetDownloadedSize() { return downloaded_size_; }
+	unsigned int GetStatus() { return download_status_; }
 
 	int GetAttemptCount() { return attempt_count_; }
 
@@ -30,7 +33,8 @@ public:
 
 private:
 	StlString url_;
-	size_t offset_;
+	size_t part_offset_;
+	size_t seg_offset_;
 	size_t size_;
 
 	int attempt_count_;

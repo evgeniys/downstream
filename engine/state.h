@@ -22,12 +22,6 @@ public:
 
 	void SetValue(const StlString &key_name, const StlString &value);
 
-private:
-
-	MapType map_;
-
-	void InitDefault();
-
 	template<class Archive>
 	void serialize(Archive & ar, const unsigned int version)
 	{
@@ -35,6 +29,11 @@ private:
 			return;
 		ar & map_;
 	}
+
+private:
+
+	MapType map_;
+
 };
 
 #endif

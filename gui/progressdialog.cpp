@@ -44,7 +44,8 @@ INT_PTR CALLBACK ProgressDialog::ProgressDialogProc(
 		return TRUE;
 
 	case WM_USER_CLOSE:
-		EndDialog(hwndDlg, 0);
+		DestroyWindow(hwndDlg); 
+		PostQuitMessage(0);
 		return TRUE;
 
 	case WM_COMMAND:
@@ -62,12 +63,12 @@ INT_PTR CALLBACK ProgressDialog::ProgressDialogProc(
 					SetDlgItemText(hwndDlg, IDC_BUTTON_PAUSE, dlg->IsPaused() ? _T("Возобновить") : _T("Приостановить"));
 				}
 				return TRUE;
-			case IDC_BUTTON_CLOSE:
-				EndDialog(hwndDlg, 0);
+			case IDCANCEL:
+				DestroyWindow(hwndDlg); 
+				PostQuitMessage(0);
 				return TRUE;
 			}
 		}
-	
 
 	default:
 		return FALSE;
@@ -76,12 +77,13 @@ INT_PTR CALLBACK ProgressDialog::ProgressDialogProc(
 
 ProgressDialog::ProgressDialog(HANDLE pause_event, 
 							   HANDLE continue_event)
-
+	
 {
 	if (dlg)
 		return;
 	pause_event_ = pause_event;
 	continue_event_ = continue_event;
+	create_event_ = NULL;
 	hwnd_ = NULL;
 	dlg = this;
 }
@@ -100,19 +102,27 @@ unsigned __stdcall ProgressDialog::ProgressDialogThread(void *arg)
 		MAKEINTRESOURCE(IDD_PROGRESS_DIALOG),
 		NULL, ProgressDialogProc, 0);
 
-	ShowWindow(dlg->hwnd_, SW_SHOW);
+	ShowWindow(dlg->hwnd_, SW_HIDE);
 	UpdateWindow(dlg->hwnd_);
 
 	SetEvent(dlg->create_event_);
 
 	MSG msg;
-	while (GetMessage(&msg, dlg->hwnd_, 0, 0))
-	{
-		TranslateMessage(&msg);
-		DispatchMessage(&msg);
+	BOOL bRet;
+
+	while ((bRet = GetMessage(&msg, NULL, 0, 0)) != 0) 
+	{ 
+		if (bRet == -1)
+		{
+			break;
+		}
+		if(!IsDialogMessage(dlg->hwnd_, &msg))
+		{ 
+			TranslateMessage(&msg); 
+			DispatchMessage(&msg); 
+		} 
 	}
 
-	DestroyWindow(dlg->hwnd_);
 __end:
 	_endthreadex(0);
 	return 0;
@@ -127,6 +137,7 @@ bool ProgressDialog::Create()
 	thread_handle_ = (HANDLE)
 		_beginthreadex(NULL, 0, ProgressDialogThread, this, 0, &thread_id);
 	WaitForSingleObject(create_event_, INFINITE);
+	CloseHandle(create_event_);
 	return true;
 }
 
@@ -183,10 +194,9 @@ bool ProgressDialog::IsPaused()
 	return paused_;
 }
 
-bool ProgressDialog::WaitForClosing()
+bool ProgressDialog::WaitForClosing(DWORD timeout)
 {
 	if (!dlg)
 		return false;
-	WaitForSingleObject(thread_handle_, INFINITE);
-	return true;
+	return WAIT_OBJECT_0 == WaitForSingleObject(thread_handle_, INFINITE);
 }

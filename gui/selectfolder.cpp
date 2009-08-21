@@ -31,6 +31,7 @@ bool SelectFolder::GetFolderName(__out StlString &folder_name)
 		return false;
 
 	folder_name = StlString(folder_name_buf.begin(), folder_name_buf.end());
+	folder_name = folder_name.substr(0, _tcslen(&folder_name_buf[0]));
 	
 	return true;
 }
