@@ -198,5 +198,5 @@ bool ProgressDialog::WaitForClosing(DWORD timeout)
 {
 	if (!dlg)
 		return false;
-	return WAIT_OBJECT_0 == WaitForSingleObject(thread_handle_, INFINITE);
+	return WAIT_OBJECT_0 == WaitForSingleObject(thread_handle_, timeout);
 }

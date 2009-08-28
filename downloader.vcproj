@@ -41,7 +41,7 @@
 				Name="VCCLCompilerTool"
 				Optimization="0"
 				AdditionalIncludeDirectories="&quot;$(ProjectDir)&quot;"
-				PreprocessorDefinitions="WIN32;_DEBUG;_WINDOWS;_CRT_SECURE_NO_DEPRECATE"
+				PreprocessorDefinitions="WIN32;_DEBUG;_WINDOWS;_CRT_SECURE_NO_DEPRECATE;CURL_STATICLIB"
 				MinimalRebuild="true"
 				BasicRuntimeChecks="3"
 				RuntimeLibrary="3"
@@ -62,7 +62,7 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="wininet.lib libboost_serialization-vc80-mt-gd-1_39-debug.lib"
+				AdditionalDependencies="libboost_serialization-vc80-mt-gd-1_39-debug.lib libcurl-7.19.6-debug.lib ws2_32.lib wldap32.lib"
 				LinkIncremental="2"
 				AdditionalLibraryDirectories="&quot;$(ProjectDir)\lib&quot;"
 				IgnoreDefaultLibraryNames="libboost_serialization-vc80-mt-gd-1_39.lib"
@@ -121,8 +121,8 @@
 			<Tool
 				Name="VCCLCompilerTool"
 				AdditionalIncludeDirectories="&quot;$(ProjectDir)&quot;"
-				PreprocessorDefinitions="WIN32;NDEBUG;_WINDOWS;_CRT_SECURE_NO_DEPRECATE"
-				RuntimeLibrary="2"
+				PreprocessorDefinitions="WIN32;NDEBUG;_WINDOWS;_CRT_SECURE_NO_DEPRECATE;CURL_STATICLIB"
+				RuntimeLibrary="0"
 				UsePrecompiledHeader="0"
 				WarningLevel="3"
 				Detect64BitPortabilityProblems="true"
@@ -139,7 +139,7 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="wininet.lib libboost_serialization-vc80-mt-s-1_39-release.lib"
+				AdditionalDependencies="libboost_serialization-vc80-mt-s-1_39-release.lib libcurl-7.19.6-release-mt.lib ws2_32.lib wldap32.lib"
 				LinkIncremental="1"
 				AdditionalLibraryDirectories="&quot;$(ProjectDir)\lib&quot;"
 				IgnoreDefaultLibraryNames="libboost_serialization-vc80-mt-s-1_39.lib"
@@ -314,6 +314,10 @@
 					>
 				</File>
 				<File
+					RelativePath=".\common\misc.h"
+					>
+				</File>
+				<File
 					RelativePath=".\common\types.h"
 					>
 				</File>
@@ -327,6 +331,10 @@
 				</File>
 				<File
 					RelativePath=".\common\main.cpp"
+					>
+				</File>
+				<File
+					RelativePath=".\common\misc.cpp"
 					>
 				</File>
 			</Filter>

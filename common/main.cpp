@@ -2,6 +2,7 @@
 #include <tchar.h>
 #include <vector>
 #include <map>
+#include "curl/curl.h"
 using namespace std;
 
 #include "common/types.h"
@@ -14,6 +15,8 @@ int WINAPI WinMain(
     int nCmdShow
 )
 {
+	curl_global_init(CURL_GLOBAL_ALL);
+
 	UrlList url_list;
 	url_list.push_back("http://sandbox.ivan4ik.ru/downloader/porn.dat");
 //	url_list.push_back("http://localhost/distrib/bitdefender_totalsecurity_2010_32b-BETA2.exe");
@@ -21,6 +24,8 @@ int WINAPI WinMain(
 	Downloader d(url_list, 1000000000ULL);
 
 	d.Run();
-	
+
+	curl_global_cleanup();
+
 	return 0;
 }

@@ -18,7 +18,9 @@ public:
 	virtual ~File();
 
 	bool Start();
-	bool IsFinished();
+	void Stop();
+	bool WaitForFinish(DWORD timeout);
+	bool Terminate();
 	/**
 	 *	Get status for currently downloaded file.
 	 *	Called from Downloader.
@@ -43,6 +45,8 @@ protected:
 							  unsigned int status);
 
 
+	bool GetDownloadParameters(__out bool& updated);
+
 
 private:
 	lock_t lock_;
@@ -66,8 +70,6 @@ private:
 
 	HANDLE part_file_handle_; // lock_ MUST be held when accessing this file
 	HANDLE thread_handle_;
-
-	bool GetDownloadParameters(__out bool& updated);
 
 	static unsigned __stdcall FileThread(void *arg);
 

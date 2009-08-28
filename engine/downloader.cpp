@@ -126,7 +126,11 @@ void Downloader::Run()
 
 		while(!IsEnoughFreeSpace())
 		{
-			Message::Show(_T("Недостаточно места (FIXME)"));
+			Message::Show(_T("В выбанном каталоге недостаточно места для\r\n")
+				_T("сохранения загруженных файлов. Пожалуйста,\r\n")
+				_T("выберите другой каталог или освободите место на\r\n")
+				_T("диске.")
+				);
 			if (!SelectFolderName())
 				return;
 		}
@@ -149,18 +153,18 @@ void Downloader::Run()
 			file_name_list.push_back(file_name);
 	}
 
+	progress_dlg_->Close();
+	progress_dlg_->WaitForClosing(INFINITE);
+	delete progress_dlg_;
+
 	// Process file_name list (try to unpack files)
 	for (list<StlString>::iterator iter = file_name_list.begin();
 		iter != file_name_list.end(); iter++) 
 	{
-		if (IsPartOfMultipartArchive(*iter))
-			continue;
-		UnpackFile(*iter);
+		if (!IsPartOfMultipartArchive(*iter))
+			UnpackFile(*iter);
 	}
 
-	progress_dlg_->Close();
-	progress_dlg_->WaitForClosing(INFINITE);
-	delete progress_dlg_;
 }
 
 bool Downloader::PerformDownload(const string& url, __out StlString& file_name)
@@ -206,10 +210,15 @@ bool Downloader::PerformDownload(const string& url, __out StlString& file_name)
 		SystemTimeToFileTime(&st_current, &ft_current);
 		file.GetDownloadStatus(status, downloaded_size);
 		ShowProgress(wurl, downloaded_size, file.GetSize(), ft_start, ft_current);
-		if (file.IsFinished())
+		if (file.WaitForFinish(0))
 			break;
 		if (progress_dlg_->WaitForClosing(0))
+		{
+			file.Stop();
+			if (!file.WaitForFinish(5000))
+				file.Terminate();
 			break;
+		}
 		Sleep(100);
 	}
 

@@ -3,6 +3,7 @@
 
 #include "common/types.h"
 #include <boost/serialization/access.hpp>
+#include "curl/curl.h"
 
 class FileSegment
 {
@@ -52,11 +53,17 @@ private:
 	HANDLE stop_event_;
 	class File *file_;
 	HANDLE thread_;
+
+	size_t position_;
 	
 	static unsigned __stdcall FileSegmentThread(void *arg);
-	bool ReadChunk(HINTERNET url_handle, size_t position, size_t chunk_size, __out size_t& read_size);
 
 	void SetStatus(unsigned int status);
+
+	// CURL callbacks
+	static size_t DownloadWriteDataCallback(void *buffer, size_t size, size_t nmemb, void *userp);
+	static int DebugCallback(CURL *handle, curl_infotype type, char *data, size_t size, void *userptr);
+	static int ProgressCallback(void *clientp, double dltotal, double dlnow, double ultotal, double ulnow);
 
 	/* Serialization */
 	friend class boost::serialization::access;

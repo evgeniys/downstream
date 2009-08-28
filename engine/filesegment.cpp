@@ -1,16 +1,19 @@
 #include <windows.h>
 #include <tchar.h>
-#include <WinInet.h>
 #include <process.h>
+#include <assert.h>
 #include <string>
 #include <vector>
 #include <list>
+#include <algorithm>
+#include <locale>
 using namespace std;
 
 #include "engine/filesegment.h"
 #include "engine/file.h"
 #include "common/consts.h"
 #include "common/logging.h"
+#include "common/misc.h"
 
 #define CHUNK_SIZE (16 * 1024)
 
@@ -28,7 +31,7 @@ FileSegment::FileSegment(File *file,
 	thread_ = NULL;
 	attempt_count_ = 0;
 	downloaded_size_ = 0;
-	SetStatus(DOWNLOAD_NOT_STARTED);
+	SetStatus(STATUS_DOWNLOAD_NOT_STARTED);
 }
 
 FileSegment::~FileSegment()
@@ -62,119 +65,90 @@ void FileSegment::SetStatus(unsigned int status)
 	file_->NotifyDownloadStatus(this, status);
 }
 
-bool FileSegment::ReadChunk(HINTERNET url_handle, size_t position, size_t chunk_size, __out size_t& read_size)
+size_t FileSegment::DownloadWriteDataCallback(void *buffer, size_t size, size_t nmemb, void *userp)
 {
-	vector <BYTE> buf;
-	buf.resize(CHUNK_SIZE);
-	size_t avail_size;
-
-	if (!InternetQueryDataAvailable(url_handle, (LPDWORD)&avail_size, 0, 0))
-	{
-		LOG(("InternetQueryDataAvailable() FAILURE, thread=0x%p, error=%d\n", GetCurrentThreadId(), GetLastError()));
-		SetStatus(DOWNLOAD_FAILURE);
-		return false;
-	}
-
-	if (chunk_size > avail_size)
-		chunk_size = avail_size;
-
-	if (InternetReadFile(url_handle, &buf[0], (DWORD)chunk_size, (LPDWORD)&read_size))
-	{
-		LOG(("[ReadChunk] OK, thread=0x%x, read_size=0x%x\n", 
-			GetCurrentThreadId(), read_size));
-		file_->NotifyDownloadProgress(this, position, &buf[0], read_size);
-		downloaded_size_ += read_size;
-		return true;
-	}
-	else
-	{
-		LOG(("InternetReadFile() FAILURE, thread=0x%p, error=%d\n", GetCurrentThreadId(), GetLastError()));
-		SetStatus(DOWNLOAD_FAILURE);
-		return false;
-	}
+	FileSegment *seg = (FileSegment*)userp;
+	size_t nr_write = nmemb * size;
+	LOG(("[DownloadWriteDataCallback] tid=0x%x, position=0x%x, size=0x%x\n", 
+		GetCurrentThreadId(), seg->position_, nr_write));
+	seg->file_->NotifyDownloadProgress(seg, seg->position_, buffer, nr_write);
+	seg->position_ += nr_write;
+	return nmemb;		 
 }
-	
+
+int FileSegment::DebugCallback(CURL *handle, curl_infotype type, char *data, size_t size, void *userptr)
+{
+	if (type != CURLINFO_DATA_IN && type != CURLINFO_DATA_OUT)
+		LOG(("[DebugCallback] tid=0x%x, type=%u: %.*s\n", GetCurrentThreadId(), type, size, data));
+	else
+		LOG(("[DebugCallback] tid=0x%x, type=%u, size=0x%x\n", GetCurrentThreadId(), type, size));
+	return 0;
+}
+
+int FileSegment::ProgressCallback(void *clientp, double dltotal, double dlnow, double ultotal, double ulnow)
+{
+	LOG(("[ProgressCallback] tid=0x%x, dltotal=%lf, dlnow=%lf, ultotal=%lf, ulnow=%lf\n", 
+		GetCurrentThreadId(), dltotal, dlnow, ultotal, ulnow));
+	return 0;
+}
+
 unsigned __stdcall  FileSegment::FileSegmentThread(void *arg)
 {
 	FileSegment *seg = (FileSegment*)arg;
-	const StlString header = _T("Accept: */*");
 
-	HINTERNET inet_handle = InternetOpen(_T("Mozilla/5.0"),
-		PRE_CONFIG_INTERNET_ACCESS, NULL, NULL, 0);
-	unsigned long timeout = 30000;
-	InternetSetOption(inet_handle, 
-		INTERNET_OPTION_RECEIVE_TIMEOUT, &timeout, sizeof(timeout));
-	InternetSetOption(inet_handle, 
-		INTERNET_OPTION_CONNECT_TIMEOUT, &timeout, sizeof(timeout));
-	InternetSetOption(inet_handle, 
-		INTERNET_OPTION_SEND_TIMEOUT, &timeout, sizeof(timeout));
-
-	HINTERNET url_handle = InternetOpenUrl(inet_handle, 
-		seg->url_.c_str(), header.c_str(), (DWORD)header.size(), 
-		INTERNET_FLAG_RELOAD|INTERNET_FLAG_EXISTING_CONNECT|INTERNET_FLAG_PASSIVE, 0);
-
-	if (url_handle)
+	CURL *http_handle = curl_easy_init();
+	if (!http_handle)
 	{
-		seg->SetStatus(DOWNLOAD_STARTED);
-
-		size_t position = seg->seg_offset_;
-
-		DWORD set_ptr_result = InternetSetFilePointer(url_handle, (LONG)position, NULL, FILE_BEGIN, 0);
-		if (position == set_ptr_result)
-		{
-			for ( ; position < seg->seg_offset_ + seg->size_; )
-			{
-				size_t read_size, nr_to_read;
-
-				nr_to_read = CHUNK_SIZE;
-				if (position + CHUNK_SIZE > seg->seg_offset_ + seg->size_)
-					nr_to_read = seg->size_ - (position - seg->seg_offset_);
-
-				bool read_chunk_result = seg->ReadChunk(url_handle, position, nr_to_read, read_size);
-
-				if (!read_chunk_result)
-					goto __finish;
-
-				//MSDN: To ensure all data is retrieved, an application must continue 
-				//to call the InternetReadFile function until the function returns 
-				// TRUE and the lpdwNumberOfBytesRead parameter equals zero.
-				if (read_size == 0)
-					break;
-
-				// Check for pause and stop event
-				if (WAIT_OBJECT_0 == WaitForSingleObject(seg->pause_event_, 0))
-				{
-					// Freeze download loop 
-					DWORD wait_result;
-					HANDLE events[] = {seg->continue_event_, seg->stop_event_};
-					do
-					{
-						wait_result = WaitForMultipleObjects(2, events, FALSE, 50);
-					} while (!(WAIT_OBJECT_0 == wait_result || WAIT_OBJECT_0 + 1 == wait_result));
-				}
-
-				if (WAIT_OBJECT_0 == WaitForSingleObject(seg->stop_event_, 0))
-					break;
-
-				position += read_size;
-			}
-
-
-			seg->SetStatus(DOWNLOAD_FINISHED);
-		}
-		else
-		{
-			LOG(("InternelSetFilePointer() FAILURE, thread=0x%p, error=%d\n", GetCurrentThreadId(), GetLastError()));
-			seg->SetStatus(DOWNLOAD_FAILURE);
-		}
-__finish:
-		InternetCloseHandle(url_handle);
+		seg->SetStatus(STATUS_INIT_FAILED);
+		goto __end;
 	}
+
+	// Set HTTP options
+	curl_easy_setopt(http_handle, CURLOPT_URL, WideToAnsiString(seg->url_).c_str());
+	curl_easy_setopt(http_handle, CURLOPT_WRITEFUNCTION, DownloadWriteDataCallback);
+	curl_easy_setopt(http_handle, CURLOPT_WRITEDATA, seg);
+	curl_easy_setopt(http_handle, CURLOPT_VERBOSE, 1);
+	curl_easy_setopt(http_handle, CURLOPT_DEBUGFUNCTION, DebugCallback);
+	curl_easy_setopt(http_handle, CURLOPT_DEBUGDATA, seg);
+	curl_easy_setopt(http_handle, CURLOPT_NOPROGRESS, 0);
+	curl_easy_setopt(http_handle, CURLOPT_PROGRESSFUNCTION, ProgressCallback);
+	curl_easy_setopt(http_handle, CURLOPT_PROGRESSDATA, seg);
+	SetProxyForHttpHandle(http_handle);
+
+	char *err_buffer = (char*)malloc(CURL_ERROR_SIZE);
+	if (err_buffer)
+		curl_easy_setopt(http_handle, CURLOPT_ERRORBUFFER, err_buffer);
+
+	// Set file position
+	CHAR range_header[1024];
+	_snprintf(range_header, _countof(range_header), "Range: bytes=%d-%d", 
+		seg->seg_offset_, seg->seg_offset_ + seg->size_ - 1);
+	struct curl_slist *headers = NULL;
+	headers = curl_slist_append(headers, range_header);
+	if (!headers)
+	{
+		curl_easy_cleanup(http_handle);
+		seg->SetStatus(STATUS_INIT_FAILED);
+		goto __end;
+	}
+	curl_easy_setopt(http_handle, CURLOPT_HTTPHEADER, headers);
+
+	seg->position_ = seg->seg_offset_;
+	CURLcode download_result = curl_easy_perform(http_handle);
+	if (0 == download_result)
+		seg->SetStatus(STATUS_DOWNLOAD_FINISHED);
 	else
-		LOG(("InternelOpenUrl() FAILURE, thread=0x%p, error=%d\n", GetCurrentThreadId(), GetLastError()));
+	{
+		LOG(("Error: %s\n", err_buffer));
+		seg->SetStatus(STATUS_DOWNLOAD_FAILURE);
+	}
 
-	InternetCloseHandle(inet_handle);
+	curl_slist_free_all(headers);
+	curl_easy_cleanup(http_handle);
+	if (err_buffer)
+		free(err_buffer);
 
+__end:
 	_endthreadex(0);
 	return 0;
 }
