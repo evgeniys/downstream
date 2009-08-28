@@ -18,7 +18,7 @@ using namespace std;
 #define CHUNK_SIZE (16 * 1024)
 
 FileSegment::FileSegment(File *file, 
-						 const StlString& url, 
+						 const std::string& url, 
 						 size_t part_offset,
 						 size_t seg_offset, size_t size, 
 						 HANDLE pause_event, 
@@ -104,7 +104,7 @@ unsigned __stdcall  FileSegment::FileSegmentThread(void *arg)
 	}
 
 	// Set HTTP options
-	curl_easy_setopt(http_handle, CURLOPT_URL, WideToAnsiString(seg->url_).c_str());
+	curl_easy_setopt(http_handle, CURLOPT_URL, seg->url_.c_str());
 	curl_easy_setopt(http_handle, CURLOPT_WRITEFUNCTION, DownloadWriteDataCallback);
 	curl_easy_setopt(http_handle, CURLOPT_WRITEDATA, seg);
 	curl_easy_setopt(http_handle, CURLOPT_VERBOSE, 1);

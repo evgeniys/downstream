@@ -3,10 +3,7 @@
 #include <assert.h>
 #include <process.h>
 #include <string>
-#include <list>
 #include <vector>
-#include <algorithm>
-#include <cctype>
 using namespace std;
 
 #include "engine/file.h"
@@ -14,19 +11,15 @@ using namespace std;
 #include "common/consts.h"
 #include "common/misc.h"
 
-//#define TEST
-
-// File part size (100 MB)
-#define PART_SIZE (100 * 1024 * 1024)
-
-File::File(const StlString &url, const StlString& fname, 
+File::File(const std::string& url, const StlString& fname, 
+		   unsigned int thread_count,
 		   HANDLE pause_event, HANDLE continue_event, HANDLE stop_event)
 {
 	InitLock(&lock_);
 	url_ = url;
 	fname_ = fname;
 	downloaded_size_ = 0;
-	thread_count_ = 1;
+	thread_count_ = thread_count;
 	part_file_handle_ = INVALID_HANDLE_VALUE;
 
 	pause_event_ = pause_event;
@@ -42,15 +35,8 @@ File::~File()
 
 bool File::Start()
 {
-	downloaded_size_ = 0;
-	bool updated;
-
-	if (!GetDownloadParameters(updated))
+	if (!HttpGetFileSize(url_, file_size_))
 		return false;
-
-#ifndef TEST
-	assert(!updated);
-#endif
 
 	unsigned thread_id;
 	thread_handle_ = (HANDLE)_beginthreadex(NULL, 0, FileThread, this, 0, &thread_id);
@@ -71,114 +57,6 @@ bool File::Terminate()
 bool File::WaitForFinish(DWORD timeout)
 {
 	return WAIT_OBJECT_0 == WaitForSingleObject(thread_handle_, timeout);
-}
-
-static bool ParseParameters(std::vector <BYTE> buf, __out unsigned int& thread_count, 
-							  __out std::list<string>& md5_list)
-{
-	string str(buf.begin(), buf.end());
-	bool thread_count_read = false;
-	md5_list.clear();
-	const char newline[] = "\n";
-	for (size_t pos = 0; pos < str.size(); )
-	{
-		size_t new_pos = str.find(newline, pos);
-		if (-1 == new_pos)
-			new_pos = str.size();
-		if (!thread_count_read)
-		{
-			thread_count = atoi((str.substr(pos, new_pos - pos)).c_str());
-			thread_count_read = true;
-		}
-		else
-		{
-			string md5_str = str.substr(pos, new_pos - pos);
-			std::transform(md5_str.begin(), md5_str.end(), md5_str.begin(), std::toupper);
-			md5_list.push_back(md5_str);
-		}
-		if (new_pos == str.size())
-			break;
-		pos = new_pos + sizeof(newline) - 1;
-	}
-	
-	return thread_count_read && md5_list.size() > 0;
-}
-
-static bool GetParameters(const StlString &url, __out unsigned int& thread_count, 
-						  __out std::list<string>& md5_list)
-{
-	const StlString param_url = url + _T(".md5");
-
-	size_t size;
-	if (!HttpGetFileSize(param_url, size))
-		return false;
-
-	bool ret_val = false;
-
-	vector <BYTE> buf;
-	buf.resize(size);
-	size_t read_size;
-	if (HttpReadFileToBuffer(param_url, &buf[0], size, read_size))
-		ret_val = ParseParameters(buf, thread_count, md5_list);
-
-	return ret_val;
-}
-
-/**
- *	Connect to the server and obtain download parameters for this file: 
- *	- MD5 hashes for entire file 
- *	- MD5 hashes for each file part
- *	- thread count
- */
-bool File::GetDownloadParameters(__out bool& updated)
-{
-	unsigned int thread_count;
-	list<string> md5_list;
-	size_t file_size;
-#ifndef TEST
-	bool get_param_result = GetParameters(url_, thread_count, md5_list);
-	if (!get_param_result)
-		return false;
-#endif
-	if (!HttpGetFileSize(url_, file_size))
-		return false;
-
-#ifndef TEST
-	updated = false;
-
-	if (md5_list_.size() != 0)
-	{
-		// If parameters already exist: check new parameters against existing ones
-		updated = (file_size != file_size_ 
-			|| thread_count != thread_count_ || md5_list.size() != md5_list_.size());
-		if (!updated)
-		{
-			list<string>::iterator i1, i2;
-			for (i1 = md5_list.begin(), i2 = md5_list_.begin(); 
-				i1 != md5_list.end(); i1++, i2++) 
-			{
-				if (*i1 != *i2)
-				{
-					updated = true;
-					break;
-				}
-			}
-		}
-	}
-
-	// Update parameters 
-	Lock(&lock_);
-	md5_list_.assign(md5_list.begin(), md5_list.end());
-	thread_count_ = thread_count;
-	file_size_ = file_size;
-	Unlock(&lock_);
-#else
-	Lock(&lock_);
-	file_size_ = file_size;
-	Unlock(&lock_);
-#endif
-
-	return true;
 }
 
 void File::NotifyDownloadProgress(FileSegment *sender, size_t offset, void *data, size_t size)
@@ -221,6 +99,7 @@ void File::NotifyDownloadStatus(FileSegment *sender,
 unsigned __stdcall File::FileThread(void *arg)
 {
 	File *file = (File*)arg;
+
 
 	// Every file is split into parts
 
@@ -326,9 +205,6 @@ bool File::DownloadPart(size_t part_num, size_t offset, size_t size)
 		return false;
 
 	// Divide part into segments (1 segment per thread)
-#ifdef TEST
-	thread_count_ = 10;//test
-#endif
 	size_t seg_size = size / thread_count_;
 	segments_.resize(thread_count_);
 	size_t seg_offset = 0;
@@ -347,27 +223,7 @@ bool File::DownloadPart(size_t part_num, size_t offset, size_t size)
 	for (unsigned i = 0; i < thread_count_; i++) 
 		thread_handles[i] = segments_[i]->GetThreadHandle();
 
-#if 1
 	WaitForMultipleObjects(thread_count_, &thread_handles[0], TRUE, INFINITE);
-#else
-	for (;;) 
-	{
-		bool finished = true;
-		//FIXME: заменить на WaitForMultipleObjects
-		for (unsigned i = 0; i < thread_count_; i++)
-		{
-			FileSegment *seg = segments_[i];
-			if (!seg->IsFinished())
-			{
-				finished = false;
-				break;
-			}
-		}
-		if (finished)
-			break;
-		Sleep(500);
-	}
-#endif
 
 	for (unsigned i = 0; i < thread_count_; i++) 
 	{

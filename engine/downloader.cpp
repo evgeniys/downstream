@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#include <cctype>
 #include <map>
 
 #include "engine/downloader.h"
@@ -12,6 +13,7 @@
 #include "gui/message.h"
 #include "gui/progressdialog.h"
 #include "gui/selectfolder.h"
+#include "common/misc.h"
 
 using namespace std;
 
@@ -40,6 +42,119 @@ Downloader::~Downloader(void)
 		CloseHandle(continue_event_);
 	if (stop_event_)
 		CloseHandle(stop_event_);
+}
+
+static bool ParseParameters(std::vector <BYTE> buf, __out unsigned int& thread_count, 
+							__out std::list<string>& md5_list)
+{
+	string str(buf.begin(), buf.end());
+	bool thread_count_read = false;
+	md5_list.clear();
+	const char newline[] = "\n";
+	for (size_t pos = 0; pos < str.size(); )
+	{
+		size_t new_pos = str.find(newline, pos);
+		if (-1 == new_pos)
+			new_pos = str.size();
+		if (!thread_count_read)
+		{
+			thread_count = atoi((str.substr(pos, new_pos - pos)).c_str());
+			thread_count_read = true;
+		}
+		else
+		{
+			string md5_str = str.substr(pos, new_pos - pos);
+			std::transform(md5_str.begin(), md5_str.end(), md5_str.begin(), std::toupper);
+			md5_list.push_back(md5_str);
+		}
+		if (new_pos == str.size())
+			break;
+		pos = new_pos + sizeof(newline) - 1;
+	}
+
+	return thread_count_read && md5_list.size() > 0;
+}
+
+static bool GetParameters(const std::string& url, __out unsigned int& thread_count, 
+						  __out std::list<string>& md5_list)
+{
+	const std::string param_url = url + ".md5";
+
+	size_t size;
+	if (!HttpGetFileSize(param_url, size))
+		return false;
+
+	bool ret_val = false;
+
+	vector <BYTE> buf;
+	buf.resize(size);
+	size_t read_size;
+	if (HttpReadFileToBuffer(param_url, &buf[0], size, read_size))
+		ret_val = ParseParameters(buf, thread_count, md5_list);
+
+	return ret_val;
+}
+
+void FileDescriptor::Update(unsigned int thread_count, std::list<std::string> md5_list)
+{
+	change_flags_ = 0;
+	if (thread_count_ != 0)
+	{
+		if (thread_count != thread_count_)
+			change_flags_ |= FC_THREAD_COUNT;
+		if (md5_list.size() != md5_list_.size())
+			change_flags_ |= FC_MD5;
+		else
+		{
+			if (!std::equal(md5_list.begin(), md5_list.end(), md5_list_.begin()))
+				change_flags_ |= FC_MD5;
+		}
+	}
+	thread_count_ = thread_count;
+	md5_list_.resize(md5_list.size());
+	std::copy(md5_list.begin(), md5_list.end(), md5_list_.begin());
+}
+
+FileDescriptorList::iterator Downloader::FindDescriptor(string& url)
+{
+	FileDescriptorList::iterator iter;
+	for (iter = file_desc_list_.begin(); iter != file_desc_list_.end(); iter++) 
+	{
+		if (iter->url_ == url)
+			return iter;
+	}
+	return file_desc_list_.end();
+}
+
+/**
+ *	Try to get download information for URL-s specified in the program.
+ *	@return true if any download details were retrieved, false otherwise
+ */
+bool Downloader::GetFileDescriptorList()
+{
+	//FIXME show message
+	bool ret_val = false;
+
+	for (UrlList::iterator url_iter = url_list_.begin(); url_iter != url_list_.end(); url_iter++) 
+	{
+		unsigned int thread_count;
+		list<string> md5_list;
+		if (GetParameters(*url_iter, thread_count, md5_list))
+		{
+			FileDescriptorList::iterator file_desc_iter = FindDescriptor(*url_iter);
+			if (file_desc_iter != file_desc_list_.end())
+				file_desc_iter->Update(thread_count, md5_list);
+			else
+			{
+				FileDescriptor file_desc(*url_iter);
+				file_desc.Update(thread_count, md5_list);
+				file_desc_list_.push_back(file_desc);
+			}
+			ret_val = true;
+		}
+	}
+	//FIXME close message
+	return ret_val;
 }
 
 bool IsValidFolder(StlString folder_name)
@@ -138,6 +253,13 @@ void Downloader::Run()
 
 	state_.Save();
 
+	if (!GetFileDescriptorList())
+	{
+		// Nothing to do; get out
+		Message::Show(_T("Ошибка: не удалось получить информацию о закачках. Выход."));
+		return;
+	}
+
 	progress_dlg_ = new ProgressDialog(pause_event_, continue_event_);
 	progress_dlg_->Create();
 	progress_dlg_->Show(false);
@@ -146,10 +268,12 @@ void Downloader::Run()
 
 	list <StlString> file_name_list;
 
-	for (UrlList::iterator iter = url_list_.begin(); iter != url_list_.end(); iter++) 
+	for (FileDescriptorList::iterator iter = file_desc_list_.begin();
+		iter != file_desc_list_.end(); iter++) 
 	{
 		StlString file_name;
-		if (PerformDownload(*iter, file_name))
+		FileDescriptor& file_desc = *iter;
+		if (PerformDownload(file_desc.url_, file_desc.thread_count_, file_name))
 			file_name_list.push_back(file_name);
 	}
 
@@ -167,7 +291,9 @@ void Downloader::Run()
 
 }
 
-bool Downloader::PerformDownload(const string& url, __out StlString& file_name)
+bool Downloader::PerformDownload(const string& url, 
+								 unsigned int thread_count,
+								 __out StlString& file_name)
 {
 	StlString tmp, fname, wurl;
 
@@ -193,38 +319,41 @@ bool Downloader::PerformDownload(const string& url, __out StlString& file_name)
 
 	file_name = fname;
 
-	File file(wurl, fname, pause_event_, continue_event_, stop_event_);
+	File file(url, fname, thread_count, pause_event_, continue_event_, stop_event_);
 
-	file.Start();
-
-	SYSTEMTIME st_start, st_current;
-	FILETIME ft_start, ft_current;
-	GetSystemTime(&st_start);
-	SystemTimeToFileTime(&st_current, &ft_current);
-
-	unsigned int status;
-	size_t downloaded_size;
-	for ( ; ; )
+	if (file.Start())
 	{
-		GetSystemTime(&st_current);
+		SYSTEMTIME st_start, st_current;
+		FILETIME ft_start, ft_current;
+		GetSystemTime(&st_start);
 		SystemTimeToFileTime(&st_current, &ft_current);
-		file.GetDownloadStatus(status, downloaded_size);
-		ShowProgress(wurl, downloaded_size, file.GetSize(), ft_start, ft_current);
-		if (file.WaitForFinish(0))
-			break;
-		if (progress_dlg_->WaitForClosing(0))
+
+		unsigned int status;
+		size_t downloaded_size;
+		for ( ; ; )
 		{
-			file.Stop();
-			if (!file.WaitForFinish(5000))
-				file.Terminate();
-			break;
+			GetSystemTime(&st_current);
+			SystemTimeToFileTime(&st_current, &ft_current);
+			file.GetDownloadStatus(status, downloaded_size);
+			ShowProgress(wurl, downloaded_size, file.GetSize(), ft_start, ft_current);
+			if (file.WaitForFinish(0))
+				break;
+			if (progress_dlg_->WaitForClosing(0))
+			{
+				file.Stop();
+				if (!file.WaitForFinish(5000))
+					file.Terminate();
+				break;
+			}
+			Sleep(100);
 		}
-		Sleep(100);
+
+		total_progress_size_ += file.GetSize();
+
+		return true;
 	}
-
-	total_progress_size_ += file.GetSize();
-
-	return true;
+	else
+		return false;
 }
 
 void Downloader::ShowProgress(const StlString& url, size_t downloaded_size, size_t file_size, 
@@ -242,5 +371,4 @@ void Downloader::ShowProgress(const StlString& url, size_t downloaded_size, size
 
 	progress_dlg_->SetDisplayedData(url, speed, file_progress, total_progress);
 }
-
 

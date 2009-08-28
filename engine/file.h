@@ -12,7 +12,8 @@ class FileSegment;
 class File
 {
 public:
-	File(const StlString &url, const StlString& fname, 
+	File(const std::string &url, const StlString& fname, 
+		unsigned int thread_count,
 		HANDLE pause_event, HANDLE continue_event, HANDLE stop_event);
 
 	virtual ~File();
@@ -50,11 +51,10 @@ protected:
 
 private:
 	lock_t lock_;
-	StlString url_;
+	std::string url_;
 	StlString fname_;
 	unsigned int thread_count_;
 	size_t file_size_;
-	std::list <std::string> md5_list_;
 	std::vector <FileSegment *> segments_;
 
 	unsigned int download_status_;
@@ -96,7 +96,6 @@ private:
 		ar & file_size_;
 		ar & download_status_;
 		ar & downloaded_size_;
-		ar & md5_list_;
 		//TODO: fix serialization
 	}
 

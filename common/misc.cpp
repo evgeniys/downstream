@@ -15,14 +15,6 @@ static char convert_to_char(wchar_t wc)
 	return (char)wc;
 }
 
-string WideToAnsiString(const StlString& wstr)
-{
-	string str;
-	str.resize(wstr.size());
-	std::transform(wstr.begin(), wstr.end(), str.begin(), convert_to_char);
-	return str;
-}
-
 static size_t FileSizeHeaderCallback(void *ptr, size_t size, size_t nmemb, void *stream)
 {
 	string header_str((char*)ptr, size * nmemb);
@@ -46,7 +38,7 @@ static size_t FileSizeWriteData(void *buffer, size_t size, size_t nmemb, void *u
  *	Get HTTP file size using cURL. 
  *	NOTE: curl_global_init() must be issued prior calling this routine.
  */
-bool HttpGetFileSize(const StlString& url, __out size_t& file_size)
+bool HttpGetFileSize(const std::string& url, __out size_t& file_size)
 {
 	size_t size = -1;
 	bool ret_val = false;
@@ -56,7 +48,7 @@ bool HttpGetFileSize(const StlString& url, __out size_t& file_size)
 	if (!http_handle)
 		return false;
 
-	curl_easy_setopt(http_handle, CURLOPT_URL, WideToAnsiString(url).c_str());
+	curl_easy_setopt(http_handle, CURLOPT_URL, url.c_str());
 	curl_easy_setopt(http_handle, CURLOPT_HEADER, 1);
 	curl_easy_setopt(http_handle, CURLOPT_NOBODY, 1);
 	curl_easy_setopt(http_handle, CURLOPT_MAXREDIRS, 500);
@@ -101,7 +93,7 @@ static size_t HttpWriteData(void *buffer, size_t size, size_t nmemb, void *userp
 	return nmemb;
 }
 
-bool HttpReadFileToBuffer(const StlString& url, void *buf, size_t size, __out size_t& read_size)
+bool HttpReadFileToBuffer(const std::string& url, void *buf, size_t size, __out size_t& read_size)
 {
 	bool ret_val = false;
 	HTTP_READ_DATA rd;
@@ -115,7 +107,7 @@ bool HttpReadFileToBuffer(const StlString& url, void *buf, size_t size, __out si
 	if (!http_handle)
 		return false;
 
-	curl_easy_setopt(http_handle, CURLOPT_URL, WideToAnsiString(url).c_str());
+	curl_easy_setopt(http_handle, CURLOPT_URL, url.c_str());
 	curl_easy_setopt(http_handle, CURLOPT_MAXREDIRS, 500);
 	curl_easy_setopt(http_handle, CURLOPT_FOLLOWLOCATION, 1);
 
@@ -138,7 +130,7 @@ bool HttpReadFileToBuffer(const StlString& url, void *buf, size_t size, __out si
  *	@param	proxy [out]		Proxy server in format "proxy[:port]"
  *	@return true if proxy is present and enabled, false otherwise
  */
-static bool HttpGetSystemProxy(__out StlString& proxy)
+static bool HttpGetSystemProxy(__out std::string& proxy)
 {
 	HKEY key_handle;
 	LONG result;
@@ -172,7 +164,7 @@ static bool HttpGetSystemProxy(__out StlString& proxy)
 				result = RegQueryValueExA(key_handle, val_name, 0, &type, &buf[0], &size);
 				if (REG_SZ == type && ERROR_SUCCESS == result)
 				{
-					proxy = StlString(buf.begin(), buf.end());
+					proxy = std::string(buf.begin(), buf.end());
 					ret_val = true;
 				}
 			}
@@ -189,10 +181,10 @@ static bool HttpGetSystemProxy(__out StlString& proxy)
  */
 bool SetProxyForHttpHandle(void *http_handle)
 {
-	StlString proxy;
+	std::string proxy;
 	if (!HttpGetSystemProxy(proxy))
 		return false;
 
-	curl_easy_setopt(http_handle, CURLOPT_PROXY, WideToAnsiString(proxy).c_str());
+	curl_easy_setopt(http_handle, CURLOPT_PROXY, proxy.c_str());
 	return true;
 }

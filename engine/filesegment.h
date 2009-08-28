@@ -9,7 +9,7 @@ class FileSegment
 {
 public:
 	FileSegment(class File *file,
-				const StlString& url, 
+		const std::string& url, 
 				size_t part_offset,
 				size_t seg_offset, size_t size, 
 				HANDLE pause_event,
@@ -22,7 +22,7 @@ public:
 	bool Start();
 	bool IsFinished();
 
-	StlString &GetUrl() { return url_; }
+	std::string &GetUrl() { return url_; }
 	size_t GetPartOffset() { return part_offset_; }
 	size_t GetSegOffset() { return seg_offset_; }
 	size_t GetSize() { return size_; }
@@ -33,7 +33,7 @@ public:
 	HANDLE GetThreadHandle() { return thread_; } 
 
 private:
-	StlString url_;
+	std::string url_;
 	size_t part_offset_;
 	size_t seg_offset_;
 	size_t size_;
