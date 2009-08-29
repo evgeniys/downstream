@@ -367,7 +367,7 @@ const string MD5::getFingerprint()
 	for (i = 0; i < 16; i++) 
 	{
 		char hex_str[20];
-		_itoa(digest[i], hex_str, 16);
+		_snprintf(hex_str, _countof(hex_str), "%02X", digest[i]);
 		str += hex_str;
 	}
 	return str;

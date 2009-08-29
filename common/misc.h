@@ -9,4 +9,6 @@ bool HttpReadFileToBuffer(const std::string& url, void *buf, size_t size, __out 
 
 bool SetProxyForHttpHandle(void *http_handle);
 
+HANDLE OpenOrCreate(const StlString& fname, DWORD access);
+
 #endif

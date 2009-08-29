@@ -14,6 +14,9 @@
 #include "gui/progressdialog.h"
 #include "gui/selectfolder.h"
 #include "common/misc.h"
+#include "engine/md5.h"
+#include "common/logging.h"
+#include "common/consts.h"
 
 using namespace std;
 
@@ -63,7 +66,7 @@ static bool ParseParameters(std::vector <BYTE> buf, __out unsigned int& thread_c
 		}
 		else
 		{
-			string md5_str = str.substr(pos, new_pos - pos);
+			string md5_str = str.substr(pos, min(0x20, new_pos - pos));
 			std::transform(md5_str.begin(), md5_str.end(), md5_str.begin(), std::toupper);
 			md5_list.push_back(md5_str);
 		}
@@ -115,7 +118,7 @@ void FileDescriptor::Update(unsigned int thread_count, std::list<std::string> md
 	std::copy(md5_list.begin(), md5_list.end(), md5_list_.begin());
 }
 
-FileDescriptorList::iterator Downloader::FindDescriptor(string& url)
+FileDescriptorList::iterator Downloader::FindDescriptor(const string& url)
 {
 	FileDescriptorList::iterator iter;
 	for (iter = file_desc_list_.begin(); iter != file_desc_list_.end(); iter++) 
@@ -268,27 +271,54 @@ void Downloader::Run()
 
 	list <StlString> file_name_list;
 
+	bool md5_check_failed = false;
+	StlString broken_url;
+
 	for (FileDescriptorList::iterator iter = file_desc_list_.begin();
 		iter != file_desc_list_.end(); iter++) 
 	{
 		StlString file_name;
 		FileDescriptor& file_desc = *iter;
 		if (PerformDownload(file_desc.url_, file_desc.thread_count_, file_name))
-			file_name_list.push_back(file_name);
+		{
+			if (CheckMd5(file_desc.url_, file_name))
+				file_name_list.push_back(file_name);
+			else
+			{
+				broken_url = StlString(file_desc.url_.begin(), file_desc.url_.end());
+				md5_check_failed = true;
+				break;
+			}
+		}
 	}
 
 	progress_dlg_->Close();
 	progress_dlg_->WaitForClosing(INFINITE);
 	delete progress_dlg_;
 
-	// Process file_name list (try to unpack files)
-	for (list<StlString>::iterator iter = file_name_list.begin();
-		iter != file_name_list.end(); iter++) 
+	if (!md5_check_failed)
 	{
-		if (!IsPartOfMultipartArchive(*iter))
-			UnpackFile(*iter);
+		bool unpack_success = true;
+		// Process file_name list (try to unpack files)
+		for (list<StlString>::iterator iter = file_name_list.begin();
+			iter != file_name_list.end(); iter++) 
+		{
+			if (!IsPartOfMultipartArchive(*iter))
+				unpack_success = unpack_success && UnpackFile(*iter);
+			if (!unpack_success)
+				break;
+		}
+		if (unpack_success)
+			Message::Show(_T("Файлы распакованы успешно."));
+		else
+			Message::Show(_T("Ошибка при распаковке. Пожалуйста, перезапустите\r\n")
+							_T(" программу для повторного скачивания."));
 	}
-
+	else
+		Message::Show(
+			StlString(_T("Целостность файла\r\n")) 
+			+ broken_url
+			+ StlString(_T("\r\nнарушена. Обратитесь в службу технической поддержки.")));
 }
 
 bool Downloader::PerformDownload(const string& url, 
@@ -321,6 +351,8 @@ bool Downloader::PerformDownload(const string& url,
 
 	File file(url, fname, thread_count, pause_event_, continue_event_, stop_event_);
 
+	bool ret_val = false;
+
 	if (file.Start())
 	{
 		SYSTEMTIME st_start, st_current;
@@ -337,7 +369,10 @@ bool Downloader::PerformDownload(const string& url,
 			file.GetDownloadStatus(status, downloaded_size);
 			ShowProgress(wurl, downloaded_size, file.GetSize(), ft_start, ft_current);
 			if (file.WaitForFinish(0))
+			{
+				ret_val = true;
 				break;
+			}
 			if (progress_dlg_->WaitForClosing(0))
 			{
 				file.Stop();
@@ -350,10 +385,85 @@ bool Downloader::PerformDownload(const string& url,
 
 		total_progress_size_ += file.GetSize();
 
-		return true;
 	}
-	else
+
+	return ret_val;
+}
+	
+bool Downloader::CheckMd5(const std::string& url, const StlString& file_name)
+{
+	FileDescriptorList::iterator file_desc_iter = FindDescriptor(url);
+	if (file_desc_iter == file_desc_list_.end())
+	{
+		LOG(("[CheckMd5] ERROR: File descriptor not found ffor URL %s\n", url.c_str()));
 		return false;
+	}
+
+	HANDLE file_handle = OpenOrCreate(file_name, GENERIC_READ);
+	if (INVALID_HANDLE_VALUE == file_handle)
+	{
+#ifdef _UNICODE
+		LOG(("[CheckMd5] ERROR: Could not open file: %S\n", file_name.c_str()));
+#else
+		LOG(("[CheckMd5] ERROR: Could not open file: %s\n", file_name.c_str()));
+#endif
+		return false;
+	}
+
+
+	MD5 file_md5;
+	file_md5.reset();
+
+	bool ret_val = true;
+
+	vector <BYTE> buf;
+	buf.resize(PART_SIZE);
+
+	ULARGE_INTEGER offset, size;
+	size.LowPart = GetFileSize(file_handle, &size.HighPart);
+	list<string>::iterator md5_iter = file_desc_iter->md5_list_.begin();
+	for (offset.QuadPart = 0; 
+		offset.QuadPart < size.QuadPart; 
+		offset.QuadPart += PART_SIZE, md5_iter++) 
+	{
+		DWORD read_size;
+		memset(&buf[0], 0, buf.size());//test
+		if (ReadFile(file_handle, &buf[0], PART_SIZE, &read_size, NULL))
+		{
+			file_md5.append(&buf[0], read_size);
+			MD5 part_md5;
+			part_md5.reset();
+			part_md5.append(&buf[0], read_size);
+			part_md5.finish();
+			string md5_str = part_md5.getFingerprint();
+			if (md5_str != *md5_iter)
+			{
+				// MD5 is wrong
+				ret_val = false;
+				break;
+			}
+		}
+
+		if (distance(md5_iter, file_desc_iter->md5_list_.end()) == 1)
+		{
+			// MD5 list is too short
+			ret_val = false;
+			break;
+		}
+	}
+
+	file_md5.finish();
+
+	if (ret_val && md5_iter != file_desc_iter->md5_list_.end())
+	{
+		// Check total MD5
+		if (file_md5.getFingerprint() != *md5_iter)
+			ret_val = false;
+	}
+
+	CloseHandle(file_handle);
+
+	return ret_val;
 }
 
 void Downloader::ShowProgress(const StlString& url, size_t downloaded_size, size_t file_size, 

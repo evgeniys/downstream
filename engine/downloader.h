@@ -42,7 +42,7 @@ private:
 	
 	FileDescriptorList file_desc_list_;
 	bool GetFileDescriptorList(); // Process url_list and create file_desc_list_
-	FileDescriptorList::iterator Downloader::FindDescriptor(std::string& url);
+	FileDescriptorList::iterator Downloader::FindDescriptor(const std::string& url);
 
 	UrlList url_list_;
 	unsigned long long total_size_;
@@ -68,6 +68,8 @@ private:
 	bool PerformDownload(const std::string& url, 
 						 unsigned int thread_count,
 						 __out StlString& file_name);
+
+	bool CheckMd5(const std::string& url, const StlString& file_name);
 
 	ProgressDialog *progress_dlg_;
 

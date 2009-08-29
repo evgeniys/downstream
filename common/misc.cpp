@@ -188,3 +188,9 @@ bool SetProxyForHttpHandle(void *http_handle)
 	curl_easy_setopt(http_handle, CURLOPT_PROXY, proxy.c_str());
 	return true;
 }
+
+HANDLE OpenOrCreate(const StlString& fname, DWORD access)
+{
+	return CreateFile(fname.c_str(), access, 
+		FILE_SHARE_READ, NULL, OPEN_ALWAYS, 0, NULL);
+}

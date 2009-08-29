@@ -5,5 +5,5 @@
 
 void Message::Show(const StlString &message)
 {
-	MessageBox(NULL, message.c_str(), _T("Инфо"), MB_OK);
+	MessageBox(NULL, message.c_str(), _T("Информация"), MB_OK);
 }

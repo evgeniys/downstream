@@ -134,12 +134,6 @@ unsigned __stdcall File::FileThread(void *arg)
 	return 0;
 }
 
-static HANDLE OpenOrCreate(const StlString& fname, DWORD access)
-{
-	return CreateFile(fname.c_str(), access, 
-		FILE_SHARE_READ, NULL, OPEN_ALWAYS, 0, NULL);
-}
-
 /**
  *	Merge parts of downloaded file and delete them
  */
