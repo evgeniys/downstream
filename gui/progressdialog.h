@@ -11,7 +11,7 @@ public:
 				   HANDLE continue_event);
 	~ProgressDialog();
 	bool SetDisplayedData(const StlString &fname, 
-						  unsigned int speed,
+						  double speed,
 						  unsigned int file_progress, 
 						  unsigned int total_progress);
 	bool Create();

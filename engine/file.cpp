@@ -19,6 +19,7 @@ File::File(const std::string& url, const StlString& fname,
 	url_ = url;
 	fname_ = fname;
 	downloaded_size_ = 0;
+	increment_ = 0;
 	thread_count_ = thread_count;
 	part_file_handle_ = INVALID_HANDLE_VALUE;
 
@@ -64,6 +65,7 @@ void File::NotifyDownloadProgress(FileSegment *sender, size_t offset, void *data
 	Lock(&lock_);
 	// Update total progress counter
 	downloaded_size_ += size;
+	increment_ += size;
 	// Write data to file
 	SetFilePointer(part_file_handle_, offset - sender->GetPartOffset(), NULL, FILE_BEGIN);
 	DWORD nr_written;
@@ -74,32 +76,9 @@ void File::NotifyDownloadProgress(FileSegment *sender, size_t offset, void *data
 	//FIXME: resuming support is postponed
 }
 
-void File::NotifyDownloadStatus(FileSegment *sender, 
-								unsigned int status)
-{
-	switch (status)
-	{
-	case STATUS_DOWNLOAD_FAILURE:
-		// Try to restart this segment
-#		define MAX_ATTEMPT_COUNT 10
-
-#if 0
-		if (sender->GetAttemptCount() < MAX_ATTEMPT_COUNT)
-			sender->Restart();//FIXME
-		else
-		{
-			AbortDownload();
-			SetStatus(status);
-		}
-#endif
-		break;
-	}
-}
-
 unsigned __stdcall File::FileThread(void *arg)
 {
 	File *file = (File*)arg;
-
 
 	// Every file is split into parts
 
@@ -119,8 +98,8 @@ unsigned __stdcall File::FileThread(void *arg)
 	}
 
 	unsigned int status;
-	size_t size;
-	file->GetDownloadStatus(status, size);
+	size_t size, increment;
+	file->GetDownloadStatus(status, size, increment);
 	if (STATUS_DOWNLOAD_FAILURE != status)
 	{
 		// Now merge all parts
@@ -211,7 +190,6 @@ bool File::DownloadPart(size_t part_num, size_t offset, size_t size)
 		segments_[i] = seg;
 	}
 
-
 	vector<HANDLE> thread_handles;
 	thread_handles.resize(thread_count_);
 	for (unsigned i = 0; i < thread_count_; i++) 
@@ -232,18 +210,20 @@ bool File::DownloadPart(size_t part_num, size_t offset, size_t size)
 	return true;
 }
 
-void File::GetDownloadStatus(__out unsigned int& status, __out size_t& downloaded_size)
+void File::GetDownloadStatus(__out unsigned int& status, __out size_t& downloaded_size, __out size_t& increment)
 {
 	status = download_status_;
 	Lock(&lock_);
 	downloaded_size = downloaded_size_;
+	increment = increment_;
+	increment_ = 0;
 	Unlock(&lock_);
 }
 
 void File::AbortDownload()
 {
 	// Set stop event to finish all running FileSegment-s
-	PulseEvent(stop_event_);
+	SetEvent(stop_event_);
 }
 
 void File::SetStatus(unsigned int status)

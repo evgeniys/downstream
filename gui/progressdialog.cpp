@@ -81,6 +81,7 @@ ProgressDialog::ProgressDialog(HANDLE pause_event,
 {
 	if (dlg)
 		return;
+	paused_ = false;
 	pause_event_ = pause_event;
 	continue_event_ = continue_event;
 	create_event_ = NULL;
@@ -157,16 +158,19 @@ bool ProgressDialog::Close()
 	return true;
 }
 
-StlString GetUserMessage(const StlString &fname, unsigned int speed)
+StlString GetUserMessage(const StlString &fname, double speed)
 {
-	TCHAR speed_str[20];
-	_itot(speed, speed_str, 10);
-	return StlString(_T("В данный момент загружается: "))
-		+ fname + _T("(") + speed_str + _T(")");
+	TCHAR msg_str[1024];
+	if (0.0f == speed)
+		_sntprintf(msg_str, _countof(msg_str), _T("%s"), fname.c_str());
+	else
+		_sntprintf(msg_str, _countof(msg_str), _T("%s (%.0lf Кб/с)"), fname.c_str(), speed);
+	StlString str = StlString(msg_str);
+	return str;
 }
 
 bool ProgressDialog::SetDisplayedData(const StlString &fname, 
-									  unsigned int speed,
+									  double speed,
 									  unsigned int file_progress, 
 									  unsigned int total_progress)
 {
@@ -182,9 +186,15 @@ bool ProgressDialog::Pause()
 	if (!hwnd_)
 		return false;
 	if (paused_)
-		PulseEvent(continue_event_);
+	{
+		ResetEvent(pause_event_);
+		SetEvent(continue_event_);
+	}
 	else
-		PulseEvent(pause_event_);
+	{
+		ResetEvent(continue_event_);
+		SetEvent(pause_event_);
+	}
 	paused_ = !paused_;
 	return true;
 }

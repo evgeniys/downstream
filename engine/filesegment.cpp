@@ -62,12 +62,18 @@ bool FileSegment::IsFinished()
 void FileSegment::SetStatus(unsigned int status)
 {
 	InterlockedExchange((volatile LONG*)&download_status_, status);
-	file_->NotifyDownloadStatus(this, status);
 }
 
 size_t FileSegment::DownloadWriteDataCallback(void *buffer, size_t size, size_t nmemb, void *userp)
 {
 	FileSegment *seg = (FileSegment*)userp;
+	if (WAIT_OBJECT_0 == WaitForSingleObject(seg->stop_event_, 0))
+	{
+		seg->file_->SetStatus(STATUS_DOWNLOAD_STOPPED);
+		return 0;
+	}
+	if (WAIT_OBJECT_0 == WaitForSingleObject(seg->pause_event_, 0))
+		return CURL_WRITEFUNC_PAUSE;
 	size_t nr_write = nmemb * size;
 	LOG(("[DownloadWriteDataCallback] tid=0x%x, position=0x%x, size=0x%x\n", 
 		GetCurrentThreadId(), seg->position_, nr_write));
@@ -87,6 +93,9 @@ int FileSegment::DebugCallback(CURL *handle, curl_infotype type, char *data, siz
 
 int FileSegment::ProgressCallback(void *clientp, double dltotal, double dlnow, double ultotal, double ulnow)
 {
+	FileSegment *seg = (FileSegment*)clientp;
+	if (WAIT_OBJECT_0 == WaitForSingleObject(seg->continue_event_, 0))
+		curl_easy_pause(seg->http_handle_, CURLPAUSE_CONT);
 	LOG(("[ProgressCallback] tid=0x%x, dltotal=%lf, dlnow=%lf, ultotal=%lf, ulnow=%lf\n", 
 		GetCurrentThreadId(), dltotal, dlnow, ultotal, ulnow));
 	return 0;
@@ -96,28 +105,47 @@ unsigned __stdcall  FileSegment::FileSegmentThread(void *arg)
 {
 	FileSegment *seg = (FileSegment*)arg;
 
-	CURL *http_handle = curl_easy_init();
-	if (!http_handle)
+	if (WAIT_OBJECT_0 == WaitForSingleObject(seg->pause_event_, 0))
+	{
+		HANDLE event_handles[2];
+		event_handles[0] = seg->continue_event_;
+		event_handles[1] = seg->stop_event_;
+		DWORD wait_result = WaitForMultipleObjects(
+			_countof(event_handles), event_handles, FALSE, INFINITE);
+
+		switch (wait_result)
+		{
+		case WAIT_OBJECT_0: // continue_event_
+			goto __download;
+		case WAIT_OBJECT_0 + 1: // stop_event_
+		default:
+			goto __end;
+		}
+	}
+
+__download:
+	seg->http_handle_ = curl_easy_init();
+	if (!seg->http_handle_)
 	{
 		seg->SetStatus(STATUS_INIT_FAILED);
 		goto __end;
 	}
 
 	// Set HTTP options
-	curl_easy_setopt(http_handle, CURLOPT_URL, seg->url_.c_str());
-	curl_easy_setopt(http_handle, CURLOPT_WRITEFUNCTION, DownloadWriteDataCallback);
-	curl_easy_setopt(http_handle, CURLOPT_WRITEDATA, seg);
-	curl_easy_setopt(http_handle, CURLOPT_VERBOSE, 1);
-	curl_easy_setopt(http_handle, CURLOPT_DEBUGFUNCTION, DebugCallback);
-	curl_easy_setopt(http_handle, CURLOPT_DEBUGDATA, seg);
-	curl_easy_setopt(http_handle, CURLOPT_NOPROGRESS, 0);
-	curl_easy_setopt(http_handle, CURLOPT_PROGRESSFUNCTION, ProgressCallback);
-	curl_easy_setopt(http_handle, CURLOPT_PROGRESSDATA, seg);
-	SetProxyForHttpHandle(http_handle);
+	curl_easy_setopt(seg->http_handle_, CURLOPT_URL, seg->url_.c_str());
+	curl_easy_setopt(seg->http_handle_, CURLOPT_WRITEFUNCTION, DownloadWriteDataCallback);
+	curl_easy_setopt(seg->http_handle_, CURLOPT_WRITEDATA, seg);
+	curl_easy_setopt(seg->http_handle_, CURLOPT_VERBOSE, 1);
+	curl_easy_setopt(seg->http_handle_, CURLOPT_DEBUGFUNCTION, DebugCallback);
+	curl_easy_setopt(seg->http_handle_, CURLOPT_DEBUGDATA, seg);
+	curl_easy_setopt(seg->http_handle_, CURLOPT_NOPROGRESS, 0);
+	curl_easy_setopt(seg->http_handle_, CURLOPT_PROGRESSFUNCTION, ProgressCallback);
+	curl_easy_setopt(seg->http_handle_, CURLOPT_PROGRESSDATA, seg);
+	SetProxyForHttpHandle(seg->http_handle_);
 
 	char *err_buffer = (char*)malloc(CURL_ERROR_SIZE);
 	if (err_buffer)
-		curl_easy_setopt(http_handle, CURLOPT_ERRORBUFFER, err_buffer);
+		curl_easy_setopt(seg->http_handle_, CURLOPT_ERRORBUFFER, err_buffer);
 
 	// Set file position
 	CHAR range_header[1024];
@@ -127,14 +155,14 @@ unsigned __stdcall  FileSegment::FileSegmentThread(void *arg)
 	headers = curl_slist_append(headers, range_header);
 	if (!headers)
 	{
-		curl_easy_cleanup(http_handle);
+		curl_easy_cleanup(seg->http_handle_);
 		seg->SetStatus(STATUS_INIT_FAILED);
 		goto __end;
 	}
-	curl_easy_setopt(http_handle, CURLOPT_HTTPHEADER, headers);
+	curl_easy_setopt(seg->http_handle_, CURLOPT_HTTPHEADER, headers);
 
 	seg->position_ = seg->seg_offset_;
-	CURLcode download_result = curl_easy_perform(http_handle);
+	CURLcode download_result = curl_easy_perform(seg->http_handle_);
 	if (0 == download_result)
 		seg->SetStatus(STATUS_DOWNLOAD_FINISHED);
 	else
@@ -144,7 +172,7 @@ unsigned __stdcall  FileSegment::FileSegmentThread(void *arg)
 	}
 
 	curl_slist_free_all(headers);
-	curl_easy_cleanup(http_handle);
+	curl_easy_cleanup(seg->http_handle_);
 	if (err_buffer)
 		free(err_buffer);
 

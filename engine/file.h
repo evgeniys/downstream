@@ -27,7 +27,8 @@ public:
 	 *	Called from Downloader.
 	 */
 	void GetDownloadStatus(__out unsigned int& status, 
-						   __out size_t& downloaded_size);
+						   __out size_t& downloaded_size, 
+						   __out size_t& increment);
 
 	size_t GetSize() { return file_size_; }
 
@@ -41,10 +42,6 @@ protected:
 	void NotifyDownloadProgress(FileSegment *sender, 
 								size_t offset, 
 								void *data, size_t size);
-
-	void NotifyDownloadStatus(FileSegment *sender, 
-							  unsigned int status);
-
 
 	bool GetDownloadParameters(__out bool& updated);
 
@@ -60,7 +57,7 @@ private:
 	unsigned int download_status_;
 
 	size_t downloaded_size_; // lock_ MUST be held when accessing this member
-	
+	size_t increment_;
 
 	friend class FileSegment;
 

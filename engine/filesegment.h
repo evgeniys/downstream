@@ -1,5 +1,5 @@
-#ifndef _DOWNLOADER_H_
-#define _DOWNLOADER_H_
+#ifndef _FILESEGMENT_H_
+#define _FILESEGMENT_H_
 
 #include "common/types.h"
 #include <boost/serialization/access.hpp>
@@ -53,6 +53,7 @@ private:
 	HANDLE stop_event_;
 	class File *file_;
 	HANDLE thread_;
+	void *http_handle_;
 
 	size_t position_;
 	

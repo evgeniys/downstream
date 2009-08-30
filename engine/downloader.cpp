@@ -272,6 +272,7 @@ void Downloader::Run()
 	list <StlString> file_name_list;
 
 	bool md5_check_failed = false;
+	bool aborted = false;
 	StlString broken_url;
 
 	for (FileDescriptorList::iterator iter = file_desc_list_.begin();
@@ -290,11 +291,20 @@ void Downloader::Run()
 				break;
 			}
 		}
+		else
+			aborted = true;
 	}
 
 	progress_dlg_->Close();
 	progress_dlg_->WaitForClosing(INFINITE);
 	delete progress_dlg_;
+
+	// If user pressed 'Exit' without downloading all files - save state and exit
+	if (aborted)
+	{
+		// FIXME save state
+		return;
+	}
 
 	if (!md5_check_failed)
 	{
@@ -358,7 +368,7 @@ bool Downloader::PerformDownload(const string& url,
 		SYSTEMTIME st_start, st_current;
 		FILETIME ft_start, ft_current;
 		GetSystemTime(&st_start);
-		SystemTimeToFileTime(&st_current, &ft_current);
+		SystemTimeToFileTime(&st_start, &ft_start);
 
 		unsigned int status;
 		size_t downloaded_size;
@@ -366,8 +376,21 @@ bool Downloader::PerformDownload(const string& url,
 		{
 			GetSystemTime(&st_current);
 			SystemTimeToFileTime(&st_current, &ft_current);
-			file.GetDownloadStatus(status, downloaded_size);
-			ShowProgress(wurl, downloaded_size, file.GetSize(), ft_start, ft_current);
+			size_t increment;
+			file.GetDownloadStatus(status, downloaded_size, increment);
+			total_progress_size_ += increment;
+			if (WAIT_OBJECT_0 == WaitForSingleObject(pause_event_, 0))
+			{
+				// Re-initialize data for speed calculation, if paused
+				GetSystemTime(&st_start);
+				SystemTimeToFileTime(&st_start, &ft_start);
+				downloaded_size = 0;
+			}
+			else
+			{
+				// Do not update progress if paused
+				ShowProgress(wurl, downloaded_size, file.GetSize(), ft_start, ft_current);
+			}
 			if (file.WaitForFinish(0))
 			{
 				ret_val = true;
@@ -376,15 +399,12 @@ bool Downloader::PerformDownload(const string& url,
 			if (progress_dlg_->WaitForClosing(0))
 			{
 				file.Stop();
-				if (!file.WaitForFinish(5000))
+				if (!file.WaitForFinish(1000))
 					file.Terminate();
 				break;
 			}
 			Sleep(100);
 		}
-
-		total_progress_size_ += file.GetSize();
-
 	}
 
 	return ret_val;
@@ -402,11 +422,8 @@ bool Downloader::CheckMd5(const std::string& url, const StlString& file_name)
 	HANDLE file_handle = OpenOrCreate(file_name, GENERIC_READ);
 	if (INVALID_HANDLE_VALUE == file_handle)
 	{
-#ifdef _UNICODE
-		LOG(("[CheckMd5] ERROR: Could not open file: %S\n", file_name.c_str()));
-#else
-		LOG(("[CheckMd5] ERROR: Could not open file: %s\n", file_name.c_str()));
-#endif
+		LOG(("[CheckMd5] ERROR: Could not open file: %S\n", 
+			std::wstring(file_name.begin(), file_name.end()).c_str()));
 		return false;
 	}
 
@@ -416,18 +433,61 @@ bool Downloader::CheckMd5(const std::string& url, const StlString& file_name)
 
 	bool ret_val = true;
 
+#define SMALL_CHUNKS 0
 	vector <BYTE> buf;
+
+	const unsigned int BUF_SIZE = 1024 * 1024;
+#if SMALL_CHUNKS
+	buf.resize(BUF_SIZE);
+#else
 	buf.resize(PART_SIZE);
+#endif
 
 	ULARGE_INTEGER offset, size;
 	size.LowPart = GetFileSize(file_handle, &size.HighPart);
 	list<string>::iterator md5_iter = file_desc_iter->md5_list_.begin();
-	for (offset.QuadPart = 0; 
-		offset.QuadPart < size.QuadPart; 
-		offset.QuadPart += PART_SIZE, md5_iter++) 
+	for (offset.QuadPart = 0; offset.QuadPart < size.QuadPart; 
+								offset.QuadPart += PART_SIZE, md5_iter++) 
 	{
 		DWORD read_size;
-		memset(&buf[0], 0, buf.size());//test
+
+		MD5 part_md5;
+		part_md5.reset();
+
+		// TODO: Measure which variant works faster: with SMALL_CHUNKS or without it
+#if SMALL_CHUNKS
+
+		ULONG64 pos = 0;
+		do {
+			if (ReadFile(file_handle, &buf[0], BUF_SIZE, &read_size, NULL))
+			{
+				LOG(("Read OK, pos=0x%llx, read_size=0x%x\n", pos, read_size));
+				file_md5.append(&buf[0], read_size);
+				part_md5.append(&buf[0], read_size);
+
+				pos += read_size;
+
+				if (pos == PART_SIZE || read_size != BUF_SIZE)
+				{
+					part_md5.finish();
+					string md5_str = part_md5.getFingerprint();
+					if (md5_str != *md5_iter)
+					{
+						// MD5 is wrong
+						ret_val = false;
+						goto __end;
+					}
+					break;
+				}
+			}
+			else
+			{
+				ret_val = false;
+				goto __end;
+			}
+		} while (read_size == BUF_SIZE);
+#else
+
 		if (ReadFile(file_handle, &buf[0], PART_SIZE, &read_size, NULL))
 		{
 			file_md5.append(&buf[0], read_size);
@@ -443,12 +503,12 @@ bool Downloader::CheckMd5(const std::string& url, const StlString& file_name)
 				break;
 			}
 		}
-
+#endif
 		if (distance(md5_iter, file_desc_iter->md5_list_.end()) == 1)
 		{
 			// MD5 list is too short
 			ret_val = false;
-			break;
+			goto __end;
 		}
 	}
 
@@ -460,7 +520,7 @@ bool Downloader::CheckMd5(const std::string& url, const StlString& file_name)
 		if (file_md5.getFingerprint() != *md5_iter)
 			ret_val = false;
 	}
-
+__end:
 	CloseHandle(file_handle);
 
 	return ret_val;
@@ -469,15 +529,21 @@ bool Downloader::CheckMd5(const std::string& url, const StlString& file_name)
 void Downloader::ShowProgress(const StlString& url, size_t downloaded_size, size_t file_size, 
 							  const FILETIME& ft_start, const FILETIME& ft_current)
 {
-	unsigned int total_progress, file_progress, speed;
+	unsigned int total_progress, file_progress;
+	double speed;
 
 	total_progress = (unsigned int)((100 * total_progress_size_ + downloaded_size) / total_size_);
 
-	file_progress = (unsigned int)(100 * downloaded_size / file_size);
+	file_progress = (unsigned int)((100 * (ULONG64)downloaded_size) / file_size);
+
+	// Time, seconds
+	ULONG64 time = (*(ULONG64*)&ft_current - *(ULONG64*)&ft_start) / 10000000;
 
 	// Speed (KB/sec)
-	speed = (unsigned int)((downloaded_size / 1024)
-		/ (((*(ULONG64*)&ft_current - *(ULONG64*)&ft_start) * 10 * 1000000)));
+	if (0 == time)
+		speed = 0.0f;
+	else
+		speed = ((double)downloaded_size) / (1024 * time);
 
 	progress_dlg_->SetDisplayedData(url, speed, file_progress, total_progress);
 }
