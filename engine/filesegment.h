@@ -9,7 +9,7 @@ class FileSegment
 {
 public:
 	FileSegment(class File *file,
-		const std::string& url, 
+				const std::string& url, 
 				size_t part_offset,
 				size_t seg_offset, size_t size, 
 				HANDLE pause_event,
@@ -19,13 +19,17 @@ public:
 	virtual ~FileSegment();
 
 	void Restart();
+
 	bool Start();
+
 	bool IsFinished();
 
 	std::string &GetUrl() { return url_; }
+
 	size_t GetPartOffset() { return part_offset_; }
+
 	size_t GetSegOffset() { return seg_offset_; }
-	size_t GetSize() { return size_; }
+
 	unsigned int GetStatus() { return download_status_; }
 
 	int GetAttemptCount() { return attempt_count_; }

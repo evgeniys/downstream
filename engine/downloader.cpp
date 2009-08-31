@@ -25,20 +25,17 @@ Downloader::Downloader(const UrlList &url_list, unsigned long long total_size)
 {
 	url_list_.resize(url_list.size());
 	copy(url_list.begin(), url_list.end(), url_list_.begin());
-	terminate_event_ = CreateEvent(NULL, TRUE, FALSE, NULL);
 	pause_event_ = CreateEvent(NULL, TRUE, FALSE, NULL);
 	continue_event_ = CreateEvent(NULL, TRUE, FALSE, NULL);
 	stop_event_ = CreateEvent(NULL, TRUE, FALSE, NULL);
 	progress_dlg_ = NULL;
-	init_ok_ = (NULL != terminate_event_);
+	init_ok_ = (NULL != pause_event_ 
+		&& NULL != continue_event_
+		&& NULL != stop_event_);
 }
 
 Downloader::~Downloader(void)
 {
-	if (!init_ok_)
-		return;
-	if (terminate_event_)
-		CloseHandle(terminate_event_);
 	if (pause_event_)
 		CloseHandle(pause_event_);
 	if (continue_event_)
@@ -225,9 +222,32 @@ static bool UnpackFile(const StlString& fname)
 	return false;//FIXME
 }
 
+FileDescriptorList::iterator Downloader::FindChangedMd5Descriptor()
+{
+	FileDescriptorList::iterator iter;
+
+	for (iter = file_desc_list_.begin(); iter != file_desc_list_.end(); iter++) 
+	{
+		if (iter->change_flags_ & FC_MD5)
+			return iter;
+	}
+
+	return iter;
+}
+
+bool Downloader::CheckNotFinishedDownloads()
+{
+	for (FileDescriptorList::iterator iter = file_desc_list_.begin();
+		iter != file_desc_list_.end(); iter++) 
+	{
+		if (!iter->finished_)
+			return true;
+	}
+	return false;
+}
+
 void Downloader::Run()
 {
-	
 	if (!init_ok_)
 	{
 		Message::Show(_T("Ошибка инициализации приложения"));
@@ -271,28 +291,83 @@ void Downloader::Run()
 
 	list <StlString> file_name_list;
 
-	bool md5_check_failed = false;
-	bool aborted = false;
-	StlString broken_url;
+	bool abort = false;
 
-	for (FileDescriptorList::iterator iter = file_desc_list_.begin();
-		iter != file_desc_list_.end(); iter++) 
+__restart:
+	for (FileDescriptorList::iterator iter = file_desc_list_.begin(); 
+											iter != file_desc_list_.end(); )
 	{
 		StlString file_name;
-		FileDescriptor& file_desc = *iter;
-		if (PerformDownload(file_desc.url_, file_desc.thread_count_, file_name))
+		if (iter->finished_)
+			goto __next_iteration;
+		unsigned int download_status = PerformDownload(
+			iter->url_, iter->thread_count_, file_name);
+		if (STATUS_DOWNLOAD_FINISHED == download_status)
 		{
-			if (CheckMd5(file_desc.url_, file_name))
+			if (CheckMd5(iter->url_, file_name))
+			{
 				file_name_list.push_back(file_name);
+				iter->finished_ = true;
+			}
 			else
 			{
-				broken_url = StlString(file_desc.url_.begin(), file_desc.url_.end());
-				md5_check_failed = true;
+				StlString broken_url = StlString(iter->url_.begin(), iter->url_.end());
+				Message::Show(
+					StlString(_T("File \r\n")) 
+					+ broken_url
+					+ StlString(_T("\r\n is corrupted. Please contact support service.")));
+				abort = true;
 				break;
 			}
 		}
-		else
-			aborted = true;
+		else if (STATUS_INIT_FAILED == download_status)
+		{
+			Message::Show(_T("Internal program error. Please contact support service\r\n"));
+			abort = true;
+			break;
+		}
+		else if (STATUS_INVALID_URL == download_status)
+		{
+			LOG(("Invalid URL: %s. Try to download this file next time\r\n", 
+				iter->url_));
+		}
+		else if (STATUS_DOWNLOAD_FAILURE == download_status)
+		{
+			LOG(("Fownload failure for URL: %s. Try to download this file next time\r\n", 
+				iter->url_));
+		}
+		else if (STATUS_FILE_CREATE_FAILURE == download_status)
+		{
+			Message::Show(StlString(_T("Unable to create file for URL "))
+				+ StlString(iter->url_.begin(), iter->url_.end()));
+			abort = true;
+			break;
+		}
+		else if (STATUS_DOWNLOAD_STOPPED == download_status) // Stopped by user
+		{
+			abort = true; // Silently exit
+			break;
+		}
+		else if (STATUS_MD5_CHANGED == download_status)
+		{
+			Message::Show(
+				StlString(_T("Certain files have been changed on the server during \r\n")
+				_T("the download process. They will be redownloaded.")));
+
+			// Roll back to changed MD5.
+			iter = FindChangedMd5Descriptor();
+			continue;
+		}
+
+__next_iteration:
+		iter++;
+	}
+
+	// Restart until all files are downloaded
+	if (!abort && CheckNotFinishedDownloads())
+	{
+		Sleep(100);
+		goto __restart;
 	}
 
 	progress_dlg_->Close();
@@ -300,42 +375,83 @@ void Downloader::Run()
 	delete progress_dlg_;
 
 	// If user pressed 'Exit' without downloading all files - save state and exit
-	if (aborted)
+	if (abort)
 	{
 		// FIXME save state
 		return;
 	}
 
-	if (!md5_check_failed)
+	bool unpack_success = true;
+	// Process file_name list (try to unpack files)
+	for (list<StlString>::iterator iter = file_name_list.begin();
+		iter != file_name_list.end(); iter++) 
 	{
-		bool unpack_success = true;
-		// Process file_name list (try to unpack files)
-		for (list<StlString>::iterator iter = file_name_list.begin();
-			iter != file_name_list.end(); iter++) 
-		{
-			if (!IsPartOfMultipartArchive(*iter))
-				unpack_success = unpack_success && UnpackFile(*iter);
-			if (!unpack_success)
-				break;
-		}
-		if (unpack_success)
-			Message::Show(_T("Файлы распакованы успешно."));
-		else
-			Message::Show(_T("Ошибка при распаковке. Пожалуйста, перезапустите\r\n")
-							_T(" программу для повторного скачивания."));
+		if (!IsPartOfMultipartArchive(*iter))
+			unpack_success = unpack_success && UnpackFile(*iter);
+		if (!unpack_success)
+			break;
 	}
+	if (unpack_success)
+		Message::Show(_T("Файлы распакованы успешно."));
 	else
-		Message::Show(
-			StlString(_T("Целостность файла\r\n")) 
-			+ broken_url
-			+ StlString(_T("\r\nнарушена. Обратитесь в службу технической поддержки.")));
+		Message::Show(_T("Ошибка при распаковке. Пожалуйста, перезапустите\r\n")
+						_T(" программу для повторного скачивания."));
 }
 
-bool Downloader::PerformDownload(const string& url, 
-								 unsigned int thread_count,
-								 __out StlString& file_name)
+static void GetTime(__out FILETIME& ft)
+{
+	SYSTEMTIME st;
+	GetSystemTime(&st);
+	SystemTimeToFileTime(&st, &ft);
+}
+
+// Get time difference in milliseconds
+static DWORD64 GetTimeDiff(const FILETIME& ft)
+{
+	FILETIME ft_current;
+	GetTime(ft_current);
+	DWORD64 time = (*(DWORD64*)&ft_current - *(DWORD64*)&ft) / 10000;
+	return time;
+}
+
+bool Downloader::CheckFileDescriptors(const std::string& current_url, 
+									  __out bool& md5_changed, 
+									  __out bool& thread_count_changed, 
+									  __out unsigned int& new_thread_count)
+{
+	md5_changed = false;
+	thread_count_changed = false;
+	if (GetFileDescriptorList())
+	{
+		bool md5_changed = false;
+		for (FileDescriptorList::iterator iter = file_desc_list_.begin(); 
+			iter != file_desc_list_.end(); iter++) 
+		{
+			if (iter->change_flags_ & FC_MD5)
+				md5_changed = true;
+			if (iter->url_ == current_url)
+			{
+				if (iter->change_flags_ & FC_THREAD_COUNT)
+				{
+					thread_count_changed = true;
+					new_thread_count = iter->thread_count_;
+				}
+				break;
+			}
+		}
+		return md5_changed || thread_count_changed;
+	}
+	else
+		return false;
+}
+
+unsigned int Downloader::PerformDownload(const string& url, 
+										 unsigned int thread_count,
+										 __out StlString& file_name)
 {
 	StlString tmp, fname, wurl;
+	const DWORD64 CHECK_PERIOD = 3000; //test 10 * 60 * 1000; // Check .md5 updates every 10 min
+	bool md5_changed = false;
 
 	wurl = StlString(url.begin(), url.end());
 
@@ -344,7 +460,7 @@ bool Downloader::PerformDownload(const string& url,
 	if (-1 == pos || pos >= wurl.size() - 1)
 	{
 		Message::Show(StlString(_T("Ошибка: неверно задан URL ")) + wurl);
-		return false;
+		return STATUS_INVALID_URL;
 	}
 
 	progress_dlg_->SetDisplayedData(wurl, 0, 0, 0);
@@ -361,55 +477,83 @@ bool Downloader::PerformDownload(const string& url,
 
 	File file(url, fname, thread_count, pause_event_, continue_event_, stop_event_);
 
-	bool ret_val = false;
+	unsigned int ret_val = STATUS_DOWNLOAD_FAILURE;
 
-	if (file.Start())
+	if (!file.Start())
+		return ret_val;
+
+	FILETIME ft_start, ft_current, ft;
+	GetTime(ft);
+	GetTime(ft_start);
+
+	unsigned int status;
+	size_t downloaded_size;
+	for ( ; ; )
 	{
-		SYSTEMTIME st_start, st_current;
-		FILETIME ft_start, ft_current;
-		GetSystemTime(&st_start);
-		SystemTimeToFileTime(&st_start, &ft_start);
-
-		unsigned int status;
-		size_t downloaded_size;
-		for ( ; ; )
+		if (GetTimeDiff(ft) >= CHECK_PERIOD)
 		{
-			GetSystemTime(&st_current);
-			SystemTimeToFileTime(&st_current, &ft_current);
-			size_t increment;
-			file.GetDownloadStatus(status, downloaded_size, increment);
-			total_progress_size_ += increment;
-			if (WAIT_OBJECT_0 == WaitForSingleObject(pause_event_, 0))
+			GetTime(ft);
+			bool thread_count_changed;
+			unsigned int new_thread_count;
+			if (CheckFileDescriptors(url, md5_changed, thread_count_changed, new_thread_count))
 			{
-				// Re-initialize data for speed calculation, if paused
-				GetSystemTime(&st_start);
-				SystemTimeToFileTime(&st_start, &ft_start);
-				downloaded_size = 0;
+				if (!md5_changed && thread_count_changed)
+				{
+					// Changed thread count for current file.
+					// Restart current part of file.
+					file.UpdateThreadCount(new_thread_count);
+				}
+				else 
+				{
+					// Changed MD5 for one of earlier downloaded files or for this file.
+					// Stop downloading this file.
+					file.Stop();
+					if (!file.WaitForFinish(5000))
+						file.Terminate();
+					ResetEvent(stop_event_);
+					// Show message if redownloading
+					ret_val = STATUS_MD5_CHANGED;
+					break;
+				}
 			}
-			else
-			{
-				// Do not update progress if paused
-				ShowProgress(wurl, downloaded_size, file.GetSize(), ft_start, ft_current);
-			}
-			if (file.WaitForFinish(0))
-			{
-				ret_val = true;
-				break;
-			}
-			if (progress_dlg_->WaitForClosing(0))
-			{
-				file.Stop();
-				if (!file.WaitForFinish(1000))
-					file.Terminate();
-				break;
-			}
-			Sleep(100);
 		}
+		GetTime(ft_current);
+		size_t increment;
+		file.GetDownloadStatus(status, downloaded_size, increment);
+		total_progress_size_ += increment;
+		if (WAIT_OBJECT_0 == WaitForSingleObject(pause_event_, 0))
+		{
+			// Re-initialize data for speed calculation, if paused
+			GetTime(ft_start);
+			downloaded_size = 0;
+		}
+		else
+		{
+			// Do not update progress if paused
+			ShowProgress(wurl, downloaded_size, file.GetSize(), ft_start, ft_current);
+		}
+		if (file.WaitForFinish(0))
+		{
+			file.GetDownloadStatus(ret_val, downloaded_size, increment);
+			if (STATUS_DOWNLOAD_FINISHED != ret_val)
+				LOG(("[PerformDownload] File is not downloaded. URL: %s, download status: 0x%x\n", 
+				url.c_str(), status));
+			break;
+		}
+		if (progress_dlg_->WaitForClosing(0))
+		{
+			file.Stop();
+			if (!file.WaitForFinish(5000))
+				file.Terminate();
+			file.GetDownloadStatus(ret_val, downloaded_size, increment);
+			break;
+		}
+		Sleep(100);
 	}
 
 	return ret_val;
 }
-	
+
 bool Downloader::CheckMd5(const std::string& url, const StlString& file_name)
 {
 	FileDescriptorList::iterator file_desc_iter = FindDescriptor(url);
@@ -433,7 +577,7 @@ bool Downloader::CheckMd5(const std::string& url, const StlString& file_name)
 
 	bool ret_val = true;
 
-#define SMALL_CHUNKS 0
+#define SMALL_CHUNKS 1
 	vector <BYTE> buf;
 
 	const unsigned int BUF_SIZE = 1024 * 1024;

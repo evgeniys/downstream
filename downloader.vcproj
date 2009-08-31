@@ -310,6 +310,10 @@
 				Name="headers"
 				>
 				<File
+					RelativePath=".\common\consts.h"
+					>
+				</File>
+				<File
 					RelativePath=".\common\logging.h"
 					>
 				</File>

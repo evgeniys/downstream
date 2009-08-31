@@ -94,7 +94,11 @@ int FileSegment::DebugCallback(CURL *handle, curl_infotype type, char *data, siz
 int FileSegment::ProgressCallback(void *clientp, double dltotal, double dlnow, double ultotal, double ulnow)
 {
 	FileSegment *seg = (FileSegment*)clientp;
-	if (WAIT_OBJECT_0 == WaitForSingleObject(seg->continue_event_, 0))
+	HANDLE event_handles[2];
+	event_handles[0] = seg->continue_event_;
+	event_handles[1] = seg->stop_event_;
+	DWORD wait_result = WaitForMultipleObjects(_countof(event_handles), event_handles, FALSE, 0);
+	if (WAIT_OBJECT_0 == wait_result || WAIT_OBJECT_0 + 1 == wait_result)
 		curl_easy_pause(seg->http_handle_, CURLPAUSE_CONT);
 	LOG(("[ProgressCallback] tid=0x%x, dltotal=%lf, dlnow=%lf, ultotal=%lf, ulnow=%lf\n", 
 		GetCurrentThreadId(), dltotal, dlnow, ultotal, ulnow));

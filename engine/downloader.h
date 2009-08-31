@@ -15,12 +15,13 @@ class ProgressDialog;
 #define FC_MD5          0x00000002
 
 struct FileDescriptor {
+	bool finished_;
 	std::string url_;
 	unsigned int thread_count_;
 	std::list<std::string> md5_list_;
 	unsigned int change_flags_;
 	FileDescriptor(std::string& url)
-		: url_(url), thread_count_(0), change_flags_(0)
+		: url_(url), thread_count_(0), change_flags_(0), finished_(false)
 	{
 	}
 	void Update(unsigned int thread_count, std::list<std::string> md5_list);
@@ -31,8 +32,11 @@ typedef std::list <FileDescriptor> FileDescriptorList;
 class Downloader
 {
 public:
+
 	Downloader(const UrlList &url_list, unsigned long long total_size);
+
 	virtual ~Downloader(void);
+
 	void Run(void);
 
 protected:
@@ -41,15 +45,25 @@ protected:
 private:
 	
 	FileDescriptorList file_desc_list_;
+
 	bool GetFileDescriptorList(); // Process url_list and create file_desc_list_
-	FileDescriptorList::iterator Downloader::FindDescriptor(const std::string& url);
+
+	FileDescriptorList::iterator FindDescriptor(const std::string& url);
+
+	bool CheckFileDescriptors(const std::string& current_url, 
+							  __out bool& md5_changed, 
+							  __out bool& thread_count_changed, 
+							  __out unsigned int& new_thread_count);
+
+	bool CheckNotFinishedDownloads();
+
+	FileDescriptorList::iterator FindChangedMd5Descriptor();
 
 	UrlList url_list_;
+
 	unsigned long long total_size_;
 
 	unsigned long long total_progress_size_;
-
-	HANDLE terminate_event_;
 
 	HANDLE pause_event_;
 	HANDLE continue_event_;
@@ -65,9 +79,9 @@ private:
 
 	bool IsEnoughFreeSpace(void);
 
-	bool PerformDownload(const std::string& url, 
-						 unsigned int thread_count,
-						 __out StlString& file_name);
+	unsigned int PerformDownload(const std::string& url, 
+								 unsigned int thread_count,
+								 __out StlString& file_name);
 
 	bool CheckMd5(const std::string& url, const StlString& file_name);
 

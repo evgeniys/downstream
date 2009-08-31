@@ -9,6 +9,8 @@
 
 class FileSegment;
 
+#define FILE_THREAD_COUNT_CHANGED 0x00000001
+
 class File
 {
 public:
@@ -22,6 +24,12 @@ public:
 	void Stop();
 	bool WaitForFinish(DWORD timeout);
 	bool Terminate();
+
+	/**
+	 *	Update thread count; restart currently downloaded part.
+	 */
+	void UpdateThreadCount(unsigned int thread_count);
+
 	/**
 	 *	Get status for currently downloaded file.
 	 *	Called from Downloader.
@@ -45,7 +53,6 @@ protected:
 
 	bool GetDownloadParameters(__out bool& updated);
 
-
 private:
 	lock_t lock_;
 	std::string url_;
@@ -53,6 +60,7 @@ private:
 	unsigned int thread_count_;
 	size_t file_size_;
 	std::vector <FileSegment *> segments_;
+	unsigned int flags_;
 
 	unsigned int download_status_;
 
@@ -65,18 +73,14 @@ private:
 	HANDLE continue_event_;
 	HANDLE stop_event_;
 
-	HANDLE part_file_handle_; // lock_ MUST be held when accessing this file
+	HANDLE file_handle_; // lock_ MUST be held when accessing this file
 	HANDLE thread_handle_;
+
+	std::vector<HANDLE> thread_handles_;
 
 	static unsigned __stdcall FileThread(void *arg);
 
-	bool DownloadPart(size_t part_num, size_t offset, size_t size);
-
-	bool MergeParts();
-
-	// Abort download if unrecoverable error occurred during download. 
-	// Called from NotifyDownloadStatus.
-	void AbortDownload();
+	bool DownloadPart(size_t part_num, size_t offset, size_t size, unsigned int thread_count);
 
 	void SetStatus(unsigned int status);
 

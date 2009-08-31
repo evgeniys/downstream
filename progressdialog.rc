@@ -69,6 +69,17 @@ BEGIN
     LTEXT           "В данный момент загружается:",IDC_STATIC,12,18,107,8
 END
 
+IDD_UNPACK_DIALOG DIALOGEX 0, 0, 382, 60
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_MINIMIZEBOX | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Downloader"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    PUSHBUTTON      "Закрыть",IDCANCEL,312,42,62,14
+    PUSHBUTTON      "Свернуть",IDC_BUTTON_TRAY,12,42,62,14
+    CONTROL         "",IDC_PROGRESS1,"msctls_progress32",WS_BORDER,12,18,360,14
+    LTEXT           "Идет распаковка файлов...",IDC_STATIC,12,6,95,8
+END
+
 
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -84,6 +95,14 @@ BEGIN
         RIGHTMARGIN, 375
         TOPMARGIN, 7
         BOTTOMMARGIN, 114
+    END
+
+    IDD_UNPACK_DIALOG, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 375
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 53
     END
 END
 #endif    // APSTUDIO_INVOKED
