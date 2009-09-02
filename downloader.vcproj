@@ -40,7 +40,7 @@
 			<Tool
 				Name="VCCLCompilerTool"
 				Optimization="0"
-				AdditionalIncludeDirectories="&quot;$(ProjectDir)&quot;"
+				AdditionalIncludeDirectories="&quot;$(ProjectDir)&quot;;&quot;$(ProjectDir)\archive\unzip&quot;"
 				PreprocessorDefinitions="WIN32;_DEBUG;_WINDOWS;_CRT_SECURE_NO_DEPRECATE;CURL_STATICLIB"
 				MinimalRebuild="true"
 				BasicRuntimeChecks="3"
@@ -62,7 +62,7 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="libboost_serialization-vc80-mt-gd-1_39-debug.lib libcurl-7.19.6-debug.lib ws2_32.lib wldap32.lib"
+				AdditionalDependencies="libboost_serialization-vc80-mt-gd-1_39-debug.lib libcurl-7.19.6-debug.lib minizip-debug.lib unrarLIB-debug.lib ws2_32.lib wldap32.lib"
 				LinkIncremental="2"
 				AdditionalLibraryDirectories="&quot;$(ProjectDir)\lib&quot;"
 				IgnoreDefaultLibraryNames="libboost_serialization-vc80-mt-gd-1_39.lib"
@@ -120,7 +120,7 @@
 			/>
 			<Tool
 				Name="VCCLCompilerTool"
-				AdditionalIncludeDirectories="&quot;$(ProjectDir)&quot;"
+				AdditionalIncludeDirectories="&quot;$(ProjectDir)&quot;;&quot;$(ProjectDir)\archive\unzip&quot;"
 				PreprocessorDefinitions="WIN32;NDEBUG;_WINDOWS;_CRT_SECURE_NO_DEPRECATE;CURL_STATICLIB"
 				RuntimeLibrary="0"
 				UsePrecompiledHeader="0"
@@ -139,7 +139,7 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
-				AdditionalDependencies="libboost_serialization-vc80-mt-s-1_39-release.lib libcurl-7.19.6-release-mt.lib ws2_32.lib wldap32.lib"
+				AdditionalDependencies="libboost_serialization-vc80-mt-s-1_39-release.lib libcurl-7.19.6-release-mt.lib minizip-release-mt.lib unrarLIB-release-mt.lib ws2_32.lib wldap32.lib"
 				LinkIncremental="1"
 				AdditionalLibraryDirectories="&quot;$(ProjectDir)\lib&quot;"
 				IgnoreDefaultLibraryNames="libboost_serialization-vc80-mt-s-1_39.lib"
@@ -179,12 +179,6 @@
 	</References>
 	<Files>
 		<Filter
-			Name="Source Files"
-			Filter="cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx"
-			UniqueIdentifier="{4FC737F1-C7A5-4376-A066-2A32D752A2FF}"
-			>
-		</Filter>
-		<Filter
 			Name="Header Files"
 			Filter="h;hpp"
 			>
@@ -218,14 +212,6 @@
 					>
 				</File>
 				<File
-					RelativePath=".\engine\file.h"
-					>
-				</File>
-				<File
-					RelativePath=".\engine\filesegment.h"
-					>
-				</File>
-				<File
 					RelativePath=".\engine\md5.h"
 					>
 				</File>
@@ -237,20 +223,20 @@
 					RelativePath=".\engine\unpacker.h"
 					>
 				</File>
+				<File
+					RelativePath=".\engine\webfile.h"
+					>
+				</File>
+				<File
+					RelativePath=".\engine\webfilesegment.h"
+					>
+				</File>
 			</Filter>
 			<Filter
 				Name="source"
 				>
 				<File
 					RelativePath=".\engine\downloader.cpp"
-					>
-				</File>
-				<File
-					RelativePath=".\engine\file.cpp"
-					>
-				</File>
-				<File
-					RelativePath=".\engine\filesegment.cpp"
 					>
 				</File>
 				<File
@@ -263,6 +249,14 @@
 				</File>
 				<File
 					RelativePath=".\engine\unpacker.cpp"
+					>
+				</File>
+				<File
+					RelativePath=".\engine\webfile.cpp"
+					>
+				</File>
+				<File
+					RelativePath=".\engine\webfilesegment.cpp"
 					>
 				</File>
 			</Filter>
@@ -340,6 +334,100 @@
 				<File
 					RelativePath=".\common\misc.cpp"
 					>
+				</File>
+			</Filter>
+		</Filter>
+		<Filter
+			Name="archive"
+			>
+			<Filter
+				Name="unzip"
+				>
+				<Filter
+					Name="headers"
+					>
+					<File
+						RelativePath=".\archive\unzip\ioapi.h"
+						>
+					</File>
+					<File
+						RelativePath=".\archive\unzip\iowin32.h"
+						>
+					</File>
+					<File
+						RelativePath=".\archive\unzip\miniunz.h"
+						>
+					</File>
+					<File
+						RelativePath=".\archive\unzip\unzip.h"
+						>
+					</File>
+					<File
+						RelativePath=".\archive\unzip\zconf.h"
+						>
+					</File>
+					<File
+						RelativePath=".\archive\unzip\zip.h"
+						>
+					</File>
+					<File
+						RelativePath=".\archive\unzip\zlib.h"
+						>
+					</File>
+				</Filter>
+				<Filter
+					Name="source"
+					>
+					<File
+						RelativePath=".\archive\unzip\miniunz.c"
+						>
+					</File>
+				</Filter>
+			</Filter>
+			<Filter
+				Name="unrar"
+				>
+				<Filter
+					Name="header"
+					>
+					<File
+						RelativePath=".\archive\unrar\unrar.h"
+						>
+					</File>
+				</Filter>
+			</Filter>
+			<Filter
+				Name="headers"
+				>
+				<File
+					RelativePath=".\archive\unpacker.h"
+					>
+				</File>
+			</Filter>
+			<Filter
+				Name="source"
+				>
+				<File
+					RelativePath=".\archive\unpacker.cpp"
+					>
+					<FileConfiguration
+						Name="Debug|Win32"
+						>
+						<Tool
+							Name="VCCLCompilerTool"
+							ObjectFile="$(IntDir)\$(InputName)1.obj"
+							XMLDocumentationFileName="$(IntDir)\$(InputName)1.xdc"
+						/>
+					</FileConfiguration>
+					<FileConfiguration
+						Name="Release|Win32"
+						>
+						<Tool
+							Name="VCCLCompilerTool"
+							ObjectFile="$(IntDir)\$(InputName)1.obj"
+							XMLDocumentationFileName="$(IntDir)\$(InputName)1.xdc"
+						/>
+					</FileConfiguration>
 				</File>
 			</Filter>
 		</Filter>

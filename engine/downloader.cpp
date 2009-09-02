@@ -9,7 +9,7 @@
 
 #include "engine/downloader.h"
 #include "engine/state.h"
-#include "engine/file.h"
+#include "engine/webfile.h"
 #include "gui/message.h"
 #include "gui/progressdialog.h"
 #include "gui/selectfolder.h"
@@ -475,7 +475,7 @@ unsigned int Downloader::PerformDownload(const string& url,
 
 	file_name = fname;
 
-	File file(url, fname, thread_count, pause_event_, continue_event_, stop_event_);
+	WebFile file(url, fname, thread_count, pause_event_, continue_event_, stop_event_);
 
 	unsigned int ret_val = STATUS_DOWNLOAD_FAILURE;
 
@@ -559,7 +559,7 @@ bool Downloader::CheckMd5(const std::string& url, const StlString& file_name)
 	FileDescriptorList::iterator file_desc_iter = FindDescriptor(url);
 	if (file_desc_iter == file_desc_list_.end())
 	{
-		LOG(("[CheckMd5] ERROR: File descriptor not found ffor URL %s\n", url.c_str()));
+		LOG(("[CheckMd5] ERROR: File descriptor not found for URL %s\n", url.c_str()));
 		return false;
 	}
 

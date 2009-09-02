@@ -7,18 +7,18 @@
 #include <boost/serialization/string.hpp>
 #include <boost/serialization/version.hpp>
 
-class FileSegment;
+class WebFileSegment;
 
 #define FILE_THREAD_COUNT_CHANGED 0x00000001
 
-class File
+class WebFile
 {
 public:
-	File(const std::string &url, const StlString& fname, 
-		unsigned int thread_count,
-		HANDLE pause_event, HANDLE continue_event, HANDLE stop_event);
+	WebFile(const std::string &url, const StlString& fname, 
+			unsigned int thread_count,
+			HANDLE pause_event, HANDLE continue_event, HANDLE stop_event);
 
-	virtual ~File();
+	virtual ~WebFile();
 
 	bool Start();
 	void Stop();
@@ -43,11 +43,11 @@ public:
 protected:
 
 	/**
-	 *	Download notify callbacks. Called from FileSegment-s.
+	 *	Download notify callbacks. Called from WebFileSegment-s.
 	 *	These methods are thread-safe.
 	 */
 
-	void NotifyDownloadProgress(FileSegment *sender, 
+	void NotifyDownloadProgress(WebFileSegment *sender, 
 								size_t offset, 
 								void *data, size_t size);
 
@@ -59,7 +59,7 @@ private:
 	StlString fname_;
 	unsigned int thread_count_;
 	size_t file_size_;
-	std::vector <FileSegment *> segments_;
+	std::vector <WebFileSegment *> segments_;
 	unsigned int flags_;
 
 	unsigned int download_status_;
@@ -67,7 +67,7 @@ private:
 	size_t downloaded_size_; // lock_ MUST be held when accessing this member
 	size_t increment_;
 
-	friend class FileSegment;
+	friend class WebFileSegment;
 
 	HANDLE pause_event_;
 	HANDLE continue_event_;

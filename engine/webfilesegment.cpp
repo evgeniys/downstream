@@ -9,21 +9,19 @@
 #include <locale>
 using namespace std;
 
-#include "engine/filesegment.h"
-#include "engine/file.h"
+#include "engine/webfilesegment.h"
+#include "engine/webfile.h"
 #include "common/consts.h"
 #include "common/logging.h"
 #include "common/misc.h"
 
-#define CHUNK_SIZE (16 * 1024)
-
-FileSegment::FileSegment(File *file, 
-						 const std::string& url, 
-						 size_t part_offset,
-						 size_t seg_offset, size_t size, 
-						 HANDLE pause_event, 
-						 HANDLE continue_event,
-						 HANDLE stop_event)
+WebFileSegment::WebFileSegment(WebFile *file, 
+							   const std::string& url, 
+							   size_t part_offset,
+							   size_t seg_offset, size_t size, 
+							   HANDLE pause_event, 
+							   HANDLE continue_event,
+							   HANDLE stop_event)
 : file_(file), url_(url), part_offset_(part_offset), seg_offset_(seg_offset), 
  size_(size), pause_event_(pause_event), 
  continue_event_(continue_event), stop_event_(stop_event)
@@ -34,13 +32,13 @@ FileSegment::FileSegment(File *file,
 	SetStatus(STATUS_DOWNLOAD_NOT_STARTED);
 }
 
-FileSegment::~FileSegment()
+WebFileSegment::~WebFileSegment()
 {
 	if (thread_)
 		CloseHandle(thread_);
 }
 
-bool FileSegment::Start()
+bool WebFileSegment::Start()
 {
 	attempt_count_++;
 	unsigned thread_id;
@@ -48,25 +46,25 @@ bool FileSegment::Start()
 	return thread_ != NULL;
 }
 
-void FileSegment::Restart()
+void WebFileSegment::Restart()
 {
 	WaitForSingleObject(thread_, INFINITE);
 	Start();
 }
 
-bool FileSegment::IsFinished()
+bool WebFileSegment::IsFinished()
 {
 	return WAIT_OBJECT_0 == WaitForSingleObject(thread_, 0);
 }
 
-void FileSegment::SetStatus(unsigned int status)
+void WebFileSegment::SetStatus(unsigned int status)
 {
 	InterlockedExchange((volatile LONG*)&download_status_, status);
 }
 
-size_t FileSegment::DownloadWriteDataCallback(void *buffer, size_t size, size_t nmemb, void *userp)
+size_t WebFileSegment::DownloadWriteDataCallback(void *buffer, size_t size, size_t nmemb, void *userp)
 {
-	FileSegment *seg = (FileSegment*)userp;
+	WebFileSegment *seg = (WebFileSegment*)userp;
 	if (WAIT_OBJECT_0 == WaitForSingleObject(seg->stop_event_, 0))
 	{
 		seg->file_->SetStatus(STATUS_DOWNLOAD_STOPPED);
@@ -82,7 +80,7 @@ size_t FileSegment::DownloadWriteDataCallback(void *buffer, size_t size, size_t 
 	return nmemb;		 
 }
 
-int FileSegment::DebugCallback(CURL *handle, curl_infotype type, char *data, size_t size, void *userptr)
+int WebFileSegment::DebugCallback(CURL *handle, curl_infotype type, char *data, size_t size, void *userptr)
 {
 	if (type != CURLINFO_DATA_IN && type != CURLINFO_DATA_OUT)
 		LOG(("[DebugCallback] tid=0x%x, type=%u: %.*s\n", GetCurrentThreadId(), type, size, data));
@@ -91,9 +89,9 @@ int FileSegment::DebugCallback(CURL *handle, curl_infotype type, char *data, siz
 	return 0;
 }
 
-int FileSegment::ProgressCallback(void *clientp, double dltotal, double dlnow, double ultotal, double ulnow)
+int WebFileSegment::ProgressCallback(void *clientp, double dltotal, double dlnow, double ultotal, double ulnow)
 {
-	FileSegment *seg = (FileSegment*)clientp;
+	WebFileSegment *seg = (WebFileSegment*)clientp;
 	HANDLE event_handles[2];
 	event_handles[0] = seg->continue_event_;
 	event_handles[1] = seg->stop_event_;
@@ -105,9 +103,9 @@ int FileSegment::ProgressCallback(void *clientp, double dltotal, double dlnow, d
 	return 0;
 }
 
-unsigned __stdcall  FileSegment::FileSegmentThread(void *arg)
+unsigned __stdcall  WebFileSegment::FileSegmentThread(void *arg)
 {
-	FileSegment *seg = (FileSegment*)arg;
+	WebFileSegment *seg = (WebFileSegment*)arg;
 
 	if (WAIT_OBJECT_0 == WaitForSingleObject(seg->pause_event_, 0))
 	{

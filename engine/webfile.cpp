@@ -6,14 +6,14 @@
 #include <vector>
 using namespace std;
 
-#include "engine/file.h"
-#include "engine/filesegment.h"
+#include "engine/webfile.h"
+#include "engine/webfilesegment.h"
 #include "common/consts.h"
 #include "common/misc.h"
 
-File::File(const std::string& url, const StlString& fname, 
-		   unsigned int thread_count,
-		   HANDLE pause_event, HANDLE continue_event, HANDLE stop_event)
+WebFile::WebFile(const std::string& url, const StlString& fname, 
+				 unsigned int thread_count,
+				 HANDLE pause_event, HANDLE continue_event, HANDLE stop_event)
 {
 	InitLock(&lock_);
 	url_ = url;
@@ -30,12 +30,12 @@ File::File(const std::string& url, const StlString& fname,
 	SetStatus(STATUS_DOWNLOAD_NOT_STARTED);
 }
 
-File::~File()
+WebFile::~WebFile()
 {
 	CloseLock(&lock_);
 }
 
-bool File::Start()
+bool WebFile::Start()
 {
 	if (!HttpGetFileSize(url_, file_size_))
 		return false;
@@ -46,22 +46,22 @@ bool File::Start()
 	return thread_handle_ != NULL;
 }
 
-void File::Stop()
+void WebFile::Stop()
 {
 	SetEvent(this->stop_event_);
 }
 
-bool File::Terminate()
+bool WebFile::Terminate()
 {
 	return 0 != TerminateThread(thread_handle_, 0);
 }
 
-bool File::WaitForFinish(DWORD timeout)
+bool WebFile::WaitForFinish(DWORD timeout)
 {
 	return WAIT_OBJECT_0 == WaitForSingleObject(thread_handle_, timeout);
 }
 
-void File::NotifyDownloadProgress(FileSegment *sender, size_t offset, void *data, size_t size)
+void WebFile::NotifyDownloadProgress(WebFileSegment *sender, size_t offset, void *data, size_t size)
 {
 	Lock(&lock_);
 	// Update total progress counter
@@ -77,16 +77,16 @@ void File::NotifyDownloadProgress(FileSegment *sender, size_t offset, void *data
 	//FIXME: resuming support is postponed
 }
 
-void File::UpdateThreadCount(unsigned int thread_count)
+void WebFile::UpdateThreadCount(unsigned int thread_count)
 {
 	flags_ |= FILE_THREAD_COUNT_CHANGED;
 	thread_count_ = thread_count;
 	SetEvent(stop_event_);
 }
 
-unsigned __stdcall File::FileThread(void *arg)
+unsigned __stdcall WebFile::FileThread(void *arg)
 {
-	File *file = (File*)arg;
+	WebFile *file = (WebFile*)arg;
 
 	// Every file is split into parts
 
@@ -135,7 +135,7 @@ __end:
 	return 0;
 }
 
-bool File::DownloadPart(size_t part_num, size_t offset, size_t size, unsigned int thread_count)
+bool WebFile::DownloadPart(size_t part_num, size_t offset, size_t size, unsigned int thread_count)
 {
 	TCHAR part_num_str[10];
 	_itot(part_num + 1, part_num_str, 10);
@@ -147,7 +147,7 @@ bool File::DownloadPart(size_t part_num, size_t offset, size_t size, unsigned in
 	size_t seg_offset = 0;
 	for (unsigned i = 0; i < thread_count; i++, seg_offset += seg_size) 
 	{
-		FileSegment *seg = new FileSegment(this, url_, offset,
+		WebFileSegment *seg = new WebFileSegment(this, url_, offset,
 			offset + seg_offset, i == thread_count - 1 ? size - seg_offset : seg_size, 
 			pause_event_, continue_event_, stop_event_);
 		seg->Start();
@@ -162,7 +162,7 @@ bool File::DownloadPart(size_t part_num, size_t offset, size_t size, unsigned in
 
 	for (unsigned i = 0; i < thread_count; i++) 
 	{
-		FileSegment *seg = segments_[i];
+		WebFileSegment *seg = segments_[i];
 		if (seg->GetStatus() == STATUS_DOWNLOAD_FAILURE)
 			SetStatus(STATUS_DOWNLOAD_FAILURE);
 		delete seg;
@@ -174,7 +174,7 @@ bool File::DownloadPart(size_t part_num, size_t offset, size_t size, unsigned in
 	return true;
 }
 
-void File::GetDownloadStatus(__out unsigned int& status, __out size_t& downloaded_size, __out size_t& increment)
+void WebFile::GetDownloadStatus(__out unsigned int& status, __out size_t& downloaded_size, __out size_t& increment)
 {
 	status = download_status_;
 	Lock(&lock_);
@@ -184,8 +184,7 @@ void File::GetDownloadStatus(__out unsigned int& status, __out size_t& downloade
 	Unlock(&lock_);
 }
 
-
-void File::SetStatus(unsigned int status)
+void WebFile::SetStatus(unsigned int status)
 {
 	InterlockedExchange((volatile LONG*)&download_status_, status);
 }

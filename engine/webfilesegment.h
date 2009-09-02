@@ -5,10 +5,10 @@
 #include <boost/serialization/access.hpp>
 #include "curl/curl.h"
 
-class FileSegment
+class WebFileSegment
 {
 public:
-	FileSegment(class File *file,
+	WebFileSegment(class WebFile *file,
 				const std::string& url, 
 				size_t part_offset,
 				size_t seg_offset, size_t size, 
@@ -16,7 +16,7 @@ public:
 				HANDLE continue_event,
 				HANDLE stop_event);
 
-	virtual ~FileSegment();
+	virtual ~WebFileSegment();
 
 	void Restart();
 
@@ -55,7 +55,7 @@ private:
 	HANDLE pause_event_;
 	HANDLE continue_event_;
 	HANDLE stop_event_;
-	class File *file_;
+	class WebFile *file_;
 	HANDLE thread_;
 	void *http_handle_;
 
