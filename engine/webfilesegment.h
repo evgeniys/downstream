@@ -10,8 +10,9 @@ class WebFileSegment
 public:
 	WebFileSegment(class WebFile *file,
 				const std::string& url, 
-				size_t part_offset,
-				size_t seg_offset, size_t size, 
+				unsigned long long part_offset,
+				unsigned long long seg_offset, 
+				unsigned long long size, 
 				HANDLE pause_event,
 				HANDLE continue_event,
 				HANDLE stop_event);
@@ -24,11 +25,13 @@ public:
 
 	bool IsFinished();
 
+	bool Terminate();
+
 	std::string &GetUrl() { return url_; }
 
-	size_t GetPartOffset() { return part_offset_; }
+	unsigned long long GetPartOffset() { return part_offset_; }
 
-	size_t GetSegOffset() { return seg_offset_; }
+	unsigned long long GetSegOffset() { return seg_offset_; }
 
 	unsigned int GetStatus() { return download_status_; }
 
@@ -38,9 +41,9 @@ public:
 
 private:
 	std::string url_;
-	size_t part_offset_;
-	size_t seg_offset_;
-	size_t size_;
+	unsigned long long part_offset_;
+	unsigned long long seg_offset_;
+	unsigned long long size_;
 
 	int attempt_count_;
 
@@ -59,7 +62,7 @@ private:
 	HANDLE thread_;
 	void *http_handle_;
 
-	size_t position_;
+	unsigned long long position_;
 	
 	static unsigned __stdcall FileSegmentThread(void *arg);
 

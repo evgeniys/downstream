@@ -38,7 +38,7 @@ static size_t FileSizeWriteData(void *buffer, size_t size, size_t nmemb, void *u
  *	Get HTTP file size using cURL. 
  *	NOTE: curl_global_init() must be issued prior calling this routine.
  */
-bool HttpGetFileSize(const std::string& url, __out size_t& file_size)
+bool HttpGetFileSize(const std::string& url, __out unsigned long long& file_size)
 {
 	size_t size = -1;
 	bool ret_val = false;

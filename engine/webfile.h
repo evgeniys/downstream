@@ -38,7 +38,7 @@ public:
 						   __out size_t& downloaded_size, 
 						   __out size_t& increment);
 
-	size_t GetSize() { return file_size_; }
+	unsigned long long GetSize() { return file_size_; }
 
 protected:
 
@@ -48,7 +48,7 @@ protected:
 	 */
 
 	void NotifyDownloadProgress(WebFileSegment *sender, 
-								size_t offset, 
+								unsigned long long offset, 
 								void *data, size_t size);
 
 	bool GetDownloadParameters(__out bool& updated);
@@ -58,7 +58,7 @@ private:
 	std::string url_;
 	StlString fname_;
 	unsigned int thread_count_;
-	size_t file_size_;
+	unsigned long long file_size_;
 	std::vector <WebFileSegment *> segments_;
 	unsigned int flags_;
 
@@ -80,7 +80,8 @@ private:
 
 	static unsigned __stdcall FileThread(void *arg);
 
-	bool DownloadPart(size_t part_num, size_t offset, size_t size, unsigned int thread_count);
+	bool DownloadPart(size_t part_num, unsigned long long offset, 
+					  unsigned long long size, unsigned int thread_count);
 
 	void SetStatus(unsigned int status);
 

@@ -7,7 +7,7 @@ class Unpacker
 {
 public:
 	Unpacker(const StlString& fname);
-	bool Unpack(const StlString& out_dir);
+	bool Unpack(const StlString& out_dir, __out bool& is_archive);
 
 private:
 	StlString fname_;

@@ -61,7 +61,8 @@ private:
 
 	UrlList url_list_;
 
-	unsigned long long total_size_;
+	unsigned long long total_size_; // Total size preconfigures inside program
+	unsigned long long total_size_http_; // Total size obtained via HTTP requests
 
 	unsigned long long total_progress_size_;
 
@@ -87,9 +88,12 @@ private:
 
 	ProgressDialog *progress_dlg_;
 
-	void ShowProgress(const StlString& url, size_t downloaded_size, size_t file_size,
+	void ShowProgress(const StlString& url, unsigned long long downloaded_size, unsigned long long file_size,
 					  const FILETIME& ft_start, const FILETIME& ft_current);
 
+	bool UnpackFile(const StlString& fname, __out bool& is_archive);
+
+	ULONG64 EstimateTotalSize();
 };
 
 #endif

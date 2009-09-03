@@ -53,6 +53,10 @@ void WebFile::Stop()
 
 bool WebFile::Terminate()
 {
+	Lock(&lock_);
+	for (size_t i = 0; i < segments_.size(); i++)
+		(segments_[i])->Terminate();
+	Unlock(&lock_);
 	return 0 != TerminateThread(thread_handle_, 0);
 }
 
@@ -61,16 +65,18 @@ bool WebFile::WaitForFinish(DWORD timeout)
 	return WAIT_OBJECT_0 == WaitForSingleObject(thread_handle_, timeout);
 }
 
-void WebFile::NotifyDownloadProgress(WebFileSegment *sender, size_t offset, void *data, size_t size)
+void WebFile::NotifyDownloadProgress(WebFileSegment *sender, unsigned long long offset, void *data, size_t size)
 {
 	Lock(&lock_);
 	// Update total progress counter
 	downloaded_size_ += size;
 	increment_ += size;
 	// Write data to file
-	SetFilePointer(file_handle_, offset, NULL, FILE_BEGIN);
+	LARGE_INTEGER tmp;
+	tmp.QuadPart = offset;
+	SetFilePointer(file_handle_, tmp.LowPart, &tmp.HighPart, FILE_BEGIN);
 	DWORD nr_written;
-	WriteFile(file_handle_, data, size, &nr_written, NULL);
+	WriteFile(file_handle_, data, (DWORD)size, &nr_written, NULL);
 	assert((size_t)nr_written == size);
 	Unlock(&lock_);
 
@@ -90,10 +96,10 @@ unsigned __stdcall WebFile::FileThread(void *arg)
 
 	// Every file is split into parts
 
-	size_t part_count = file->file_size_ / PART_SIZE;
+	size_t part_count = (size_t)(file->file_size_ / PART_SIZE);
 	if (file->file_size_ % PART_SIZE)
 		part_count++;
-	size_t offset = 0;
+	unsigned long long offset = 0;
 
 	file->file_handle_ = OpenOrCreate(file->fname_, GENERIC_WRITE);
 	if (INVALID_HANDLE_VALUE == file->file_handle_)
@@ -106,7 +112,7 @@ unsigned __stdcall WebFile::FileThread(void *arg)
 
 	for (size_t part_num = 0; offset < file->file_size_; ) 
 	{
-		size_t part_size = PART_SIZE;
+		unsigned long long part_size = PART_SIZE;
 		if (offset + PART_SIZE >= file->file_size_)
 			part_size = file->file_size_ - offset;
 		file->DownloadPart(part_num, offset, part_size, file->thread_count_);
@@ -135,16 +141,19 @@ __end:
 	return 0;
 }
 
-bool WebFile::DownloadPart(size_t part_num, size_t offset, size_t size, unsigned int thread_count)
+bool WebFile::DownloadPart(size_t part_num, unsigned long long offset, 
+						   unsigned long long size, unsigned int thread_count)
 {
 	TCHAR part_num_str[10];
-	_itot(part_num + 1, part_num_str, 10);
+	_itot((int)part_num + 1, part_num_str, 10);
 	StlString part_fname = fname_ + _T(".part") + part_num_str;
 
 	// Divide part into segments (1 segment per thread)
-	size_t seg_size = size / thread_count;
+	unsigned long long seg_size = size / thread_count;
+
+	Lock(&lock_);
 	segments_.resize(thread_count);
-	size_t seg_offset = 0;
+	unsigned long long seg_offset = 0;
 	for (unsigned i = 0; i < thread_count; i++, seg_offset += seg_size) 
 	{
 		WebFileSegment *seg = new WebFileSegment(this, url_, offset,
@@ -157,6 +166,8 @@ bool WebFile::DownloadPart(size_t part_num, size_t offset, size_t size, unsigned
 	thread_handles_.resize(thread_count);
 	for (unsigned i = 0; i < thread_count; i++) 
 		thread_handles_[i] = segments_[i]->GetThreadHandle();
+
+	Unlock(&lock_);
 
 	WaitForMultipleObjects(thread_count, &thread_handles_[0], TRUE, INFINITE);
 

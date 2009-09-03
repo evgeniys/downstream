@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cctype>
 #include <map>
+#include <boost/regex/mfc.hpp>
 
 #include "engine/downloader.h"
 #include "engine/state.h"
@@ -17,6 +18,7 @@
 #include "engine/md5.h"
 #include "common/logging.h"
 #include "common/consts.h"
+#include "archive/unpacker.h"
 
 using namespace std;
 
@@ -42,6 +44,20 @@ Downloader::~Downloader(void)
 		CloseHandle(continue_event_);
 	if (stop_event_)
 		CloseHandle(stop_event_);
+}
+
+ULONG64 Downloader::EstimateTotalSize()
+{
+	ULONG64 total = 0;
+
+	for (UrlList::iterator iter = url_list_.begin(); iter != url_list_.end(); iter++) 
+	{
+		ULONG64 size;
+		if (HttpGetFileSize(*iter, size))
+			total += size;
+	}
+
+	return total;
 }
 
 static bool ParseParameters(std::vector <BYTE> buf, __out unsigned int& thread_count, 
@@ -80,16 +96,16 @@ static bool GetParameters(const std::string& url, __out unsigned int& thread_cou
 {
 	const std::string param_url = url + ".md5";
 
-	size_t size;
+	ULONG64 size;
 	if (!HttpGetFileSize(param_url, size))
 		return false;
 
 	bool ret_val = false;
 
 	vector <BYTE> buf;
-	buf.resize(size);
+	buf.resize((size_t)size);
 	size_t read_size;
-	if (HttpReadFileToBuffer(param_url, &buf[0], size, read_size))
+	if (HttpReadFileToBuffer(param_url, &buf[0], (size_t)size, read_size))
 		ret_val = ParseParameters(buf, thread_count, md5_list);
 
 	return ret_val;
@@ -179,7 +195,7 @@ bool Downloader::SelectFolderName(void)
 		{
 			if (!SelectFolder::GetFolderName(folder_name_))
 			{
-				Message::Show(_T("Папка для скачиваемых файлов не выбрана. Выход"));
+				Message::Show(_T("Folder for downloaded files is not selected. Exiting"));
 				return false;
 			}
 			state_.SetValue(_T("folder_name"), folder_name_);
@@ -211,15 +227,62 @@ bool Downloader::IsEnoughFreeSpace()
 
 	return false;
 }
+#if 0
+template <SIMPLE_STRING_PARAM, class T>
+inline bool regex_match(const StlString& s,
+						const basic_regex<B, T>& e,
+						boost::regex_constants::match_flag_type f = boost::regex_constants::match_default)
+{
+	return ::boost::regex_match(s.c_str(),
+		s.s.GetString() + s.GetLength(),
+		e,
+		f);
+}
+#endif
 
 static bool IsPartOfMultipartArchive(const StlString& fname)
 {
-	return false;//FIXME
+	StlString fname_nopath;
+	size_t last_slash_pos = fname.find_last_of(_T('\\'));
+	if (fname.size() == last_slash_pos)
+	{
+		LOG(("[IsPartOfMultipartArchive] ERROR: wrong file name: %S\n", 
+			(wstring(fname.begin(), fname.end())).c_str()));
+		return false;
+	}
+	fname_nopath = (StlString::npos == last_slash_pos) ? fname : fname.substr(last_slash_pos + 1);
+
+	boost::tregex re(_T("(.*)(\\.part)([0-9]+)(\\.rar)"), 
+		boost::tregex::perl|boost::tregex::icase); 
+
+
+	bool ret_val = false;
+
+	if (boost::regex_match(fname_nopath, re))
+	{
+		size_t pos;
+		pos = fname_nopath.find_last_of(_T('.'));
+		if (StlString::npos != pos)
+		{
+			StlString tmp = fname_nopath.substr(0, pos);
+			pos = tmp.find_last_of(_T(".part"));
+			if (StlString::npos != pos && pos < tmp.size() - 1)
+			{
+				tmp = tmp.substr(pos + 1);
+				int part_num = _ttoi(tmp.c_str());
+				
+				ret_val = (part_num != 1);
+			}
+		}
+	}
+
+	return ret_val;
 }
 
-static bool UnpackFile(const StlString& fname)
+bool Downloader::UnpackFile(const StlString& fname, __out bool& is_archive)
 {
-	return false;//FIXME
+	Unpacker u(fname);
+	return u.Unpack(folder_name_, is_archive);
 }
 
 FileDescriptorList::iterator Downloader::FindChangedMd5Descriptor()
@@ -264,10 +327,9 @@ void Downloader::Run()
 
 		while(!IsEnoughFreeSpace())
 		{
-			Message::Show(_T("В выбанном каталоге недостаточно места для\r\n")
-				_T("сохранения загруженных файлов. Пожалуйста,\r\n")
-				_T("выберите другой каталог или освободите место на\r\n")
-				_T("диске.")
+			Message::Show(_T("Insufficient disk space in the selected directory.\r\n\r\n")
+				_T("Please choose another directory or free up the disk spacer\r\n")
+				_T("in the selected one.\r\n")
 				);
 			if (!SelectFolderName())
 				return;
@@ -279,9 +341,11 @@ void Downloader::Run()
 	if (!GetFileDescriptorList())
 	{
 		// Nothing to do; get out
-		Message::Show(_T("Ошибка: не удалось получить информацию о закачках. Выход."));
+		Message::Show(_T("Error: could not get download indofmation. Exiting."));
 		return;
 	}
+
+	total_size_http_ = EstimateTotalSize();
 
 	progress_dlg_ = new ProgressDialog(pause_event_, continue_event_);
 	progress_dlg_->Create();
@@ -322,7 +386,7 @@ __restart:
 		}
 		else if (STATUS_INIT_FAILED == download_status)
 		{
-			Message::Show(_T("Internal program error. Please contact support service\r\n"));
+			Message::Show(_T("Internal program error. Please contact support service.\r\n"));
 			abort = true;
 			break;
 		}
@@ -374,7 +438,7 @@ __next_iteration:
 	progress_dlg_->WaitForClosing(INFINITE);
 	delete progress_dlg_;
 
-	// If user pressed 'Exit' without downloading all files - save state and exit
+	// If user pressed 'Exit' without downloading all files, save state and exit
 	if (abort)
 	{
 		// FIXME save state
@@ -382,20 +446,30 @@ __next_iteration:
 	}
 
 	bool unpack_success = true;
+	bool at_least_one_archive = false;
 	// Process file_name list (try to unpack files)
 	for (list<StlString>::iterator iter = file_name_list.begin();
 		iter != file_name_list.end(); iter++) 
 	{
 		if (!IsPartOfMultipartArchive(*iter))
-			unpack_success = unpack_success && UnpackFile(*iter);
+		{
+			bool unpack_result, is_archive;
+			unpack_result = UnpackFile(*iter, is_archive);
+			if (is_archive)
+				at_least_one_archive = true;
+			unpack_success = unpack_success && (!is_archive || unpack_result);
+		}
 		if (!unpack_success)
 			break;
 	}
-	if (unpack_success)
-		Message::Show(_T("Файлы распакованы успешно."));
-	else
-		Message::Show(_T("Ошибка при распаковке. Пожалуйста, перезапустите\r\n")
-						_T(" программу для повторного скачивания."));
+	if (at_least_one_archive)
+	{	
+		if (unpack_success)
+			Message::Show(_T("Files have been unpacked successfully."));
+		else
+			Message::Show(_T("Error while unpacking files\r\n.")
+						  _T("\r\n. Please restart program to download files again"));
+	}
 }
 
 static void GetTime(__out FILETIME& ft)
@@ -459,7 +533,7 @@ unsigned int Downloader::PerformDownload(const string& url,
 
 	if (-1 == pos || pos >= wurl.size() - 1)
 	{
-		Message::Show(StlString(_T("Ошибка: неверно задан URL ")) + wurl);
+		Message::Show(StlString(_T("Error: invalid URL\r\n")) + wurl);
 		return STATUS_INVALID_URL;
 	}
 
@@ -508,7 +582,7 @@ unsigned int Downloader::PerformDownload(const string& url,
 					// Changed MD5 for one of earlier downloaded files or for this file.
 					// Stop downloading this file.
 					file.Stop();
-					if (!file.WaitForFinish(5000))
+					if (!file.WaitForFinish(1000))
 						file.Terminate();
 					ResetEvent(stop_event_);
 					// Show message if redownloading
@@ -543,9 +617,10 @@ unsigned int Downloader::PerformDownload(const string& url,
 		if (progress_dlg_->WaitForClosing(0))
 		{
 			file.Stop();
-			if (!file.WaitForFinish(5000))
+			if (!file.WaitForFinish(1000))
 				file.Terminate();
-			file.GetDownloadStatus(ret_val, downloaded_size, increment);
+			//file.GetDownloadStatus(ret_val, downloaded_size, increment);
+			ret_val = STATUS_DOWNLOAD_STOPPED;
 			break;
 		}
 		Sleep(100);
@@ -670,15 +745,18 @@ __end:
 	return ret_val;
 }
 
-void Downloader::ShowProgress(const StlString& url, size_t downloaded_size, size_t file_size, 
+void Downloader::ShowProgress(const StlString& url, 
+							  unsigned long long downloaded_size, unsigned long long file_size, 
 							  const FILETIME& ft_start, const FILETIME& ft_current)
 {
 	unsigned int total_progress, file_progress;
 	double speed;
 
-	total_progress = (unsigned int)((100 * total_progress_size_ + downloaded_size) / total_size_);
+	unsigned long long tmp_total_size = total_size_http_ ? total_size_http_ : total_size_;
 
-	file_progress = (unsigned int)((100 * (ULONG64)downloaded_size) / file_size);
+	total_progress = (unsigned int)((100 * total_progress_size_ + downloaded_size) / tmp_total_size);
+
+	file_progress = (unsigned int)((100 * downloaded_size) / file_size);
 
 	// Time, seconds
 	ULONG64 time = (*(ULONG64*)&ft_current - *(ULONG64*)&ft_start) / 10000000;

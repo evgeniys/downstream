@@ -20,7 +20,7 @@ bool SelectFolder::GetFolderName(__out StlString &folder_name)
 	bi.pszDisplayName = &folder_name_buf[0];
 	bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_SHAREABLE
 		| BIF_EDITBOX | BIF_VALIDATE;
-	bi.lpszTitle = _T("Выберите папку для скачиваемых файлов");
+	bi.lpszTitle = _T("Select directory");
 	
 	LPITEMIDLIST item_id_list = SHBrowseForFolder(&bi);
 

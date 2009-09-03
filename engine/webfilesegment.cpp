@@ -17,8 +17,9 @@ using namespace std;
 
 WebFileSegment::WebFileSegment(WebFile *file, 
 							   const std::string& url, 
-							   size_t part_offset,
-							   size_t seg_offset, size_t size, 
+							   unsigned long long part_offset,
+							   unsigned long long seg_offset, 
+							   unsigned long long size, 
 							   HANDLE pause_event, 
 							   HANDLE continue_event,
 							   HANDLE stop_event)
@@ -55,6 +56,11 @@ void WebFileSegment::Restart()
 bool WebFileSegment::IsFinished()
 {
 	return WAIT_OBJECT_0 == WaitForSingleObject(thread_, 0);
+}
+
+bool WebFileSegment::Terminate()
+{
+	return 0 != TerminateThread(thread_, 0);
 }
 
 void WebFileSegment::SetStatus(unsigned int status)
@@ -151,7 +157,7 @@ __download:
 
 	// Set file position
 	CHAR range_header[1024];
-	_snprintf(range_header, _countof(range_header), "Range: bytes=%d-%d", 
+	_snprintf(range_header, _countof(range_header), "Range: bytes=%lld-%lld", 
 		seg->seg_offset_, seg->seg_offset_ + seg->size_ - 1);
 	struct curl_slist *headers = NULL;
 	headers = curl_slist_append(headers, range_header);

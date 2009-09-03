@@ -48,8 +48,9 @@ bool IsRarFile(void *buf, size_t size)
 	return *(ULONG32*)buf == 0x21726152;
 }
 
-bool Unpacker::Unpack(const StlString& out_dir)
+bool Unpacker::Unpack(const StlString& out_dir, __out bool& is_archive)
 {
+	is_archive = false;
 	// Read header
 	const size_t HEADER_SIZE = 0x10000;
 	vector<BYTE> header_buf;
@@ -65,10 +66,13 @@ bool Unpacker::Unpack(const StlString& out_dir)
 	bool ret_val = false;
 	// Get archive type
 	// Unpack depending on archive type
+	is_archive = true;
 	if (IsZipFile(&header_buf[0], read_size))
 		ret_val = ZipUnpack(out_dir);
 	else if (IsRarFile(&header_buf[0], read_size))
 		ret_val = RarUnpack(out_dir);
+	else
+		is_archive = false;
 
 	SetCurrentDirectory(prev_dir);
 
