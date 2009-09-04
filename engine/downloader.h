@@ -91,7 +91,7 @@ private:
 	void ShowProgress(const StlString& url, unsigned long long downloaded_size, unsigned long long file_size,
 					  const FILETIME& ft_start, const FILETIME& ft_current);
 
-	bool UnpackFile(const StlString& fname, __out bool& is_archive);
+	unsigned int UnpackFile(const StlString& fname);
 
 	ULONG64 EstimateTotalSize();
 };

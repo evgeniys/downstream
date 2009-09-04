@@ -7,13 +7,13 @@ class Unpacker
 {
 public:
 	Unpacker(const StlString& fname);
-	bool Unpack(const StlString& out_dir, __out bool& is_archive);
+	unsigned int Unpack(const StlString& out_dir);
 
 private:
 	StlString fname_;
 
-	bool ZipUnpack(const StlString& out_dir);
-	bool RarUnpack(const StlString& out_dir);
+	unsigned int ZipUnpack(const StlString& out_dir);
+	unsigned int RarUnpack(const StlString& out_dir);
 };
 
 #endif

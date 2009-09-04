@@ -279,10 +279,10 @@ static bool IsPartOfMultipartArchive(const StlString& fname)
 	return ret_val;
 }
 
-bool Downloader::UnpackFile(const StlString& fname, __out bool& is_archive)
+unsigned int Downloader::UnpackFile(const StlString& fname)
 {
 	Unpacker u(fname);
-	return u.Unpack(folder_name_, is_archive);
+	return u.Unpack(folder_name_);
 }
 
 FileDescriptorList::iterator Downloader::FindChangedMd5Descriptor()
@@ -453,11 +453,20 @@ __next_iteration:
 	{
 		if (!IsPartOfMultipartArchive(*iter))
 		{
-			bool unpack_result, is_archive;
-			unpack_result = UnpackFile(*iter, is_archive);
-			if (is_archive)
+			unsigned int unpack_result;
+			unpack_result = UnpackFile(*iter);
+			if (UNPACK_NO_SPACE == unpack_result)
+			{
+				Message::Show(_T("Insufficient disk space to perform file\r\n")
+					_T("extraction. Please free up the space and restart this\r\n")
+					_T("downloader, thus it can extract the files downloaded."));
+				return;
+			}
+			if (UNPACK_NOT_ARCHIVE != unpack_result)
+			{
 				at_least_one_archive = true;
-			unpack_success = unpack_success && (!is_archive || unpack_result);
+				unpack_success = unpack_success && (UNPACK_SUCCESS == unpack_result);
+			}
 		}
 		if (!unpack_success)
 			break;

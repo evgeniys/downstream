@@ -1,4 +1,5 @@
 #include <windows.h>
+#include <tchar.h>
 #include <stdio.h>
 #include <vector>
 #include <list>
@@ -13,6 +14,7 @@ using namespace std;
 #include "archive/unzip/iowin32.h"
 #include "archive/unzip/miniunz.h"
 #include "common/logging.h"
+#include "common/consts.h"
 
 
 static bool ReadFileToBuffer(const StlString& fname, void *buf, size_t size, __out size_t& read_size)
@@ -48,46 +50,45 @@ bool IsRarFile(void *buf, size_t size)
 	return *(ULONG32*)buf == 0x21726152;
 }
 
-bool Unpacker::Unpack(const StlString& out_dir, __out bool& is_archive)
+unsigned int Unpacker::Unpack(const StlString& out_dir)
 {
-	is_archive = false;
 	// Read header
 	const size_t HEADER_SIZE = 0x10000;
 	vector<BYTE> header_buf;
 	header_buf.resize(HEADER_SIZE);
 	size_t read_size;
 	if (!ReadFileToBuffer(fname_, &header_buf[0], HEADER_SIZE, read_size))
-		return false;
+		return UNPACK_SYSTEM_ERROR;
 
 	TCHAR prev_dir[MAX_PATH];
 	GetCurrentDirectory(MAX_PATH, prev_dir);
 	SetCurrentDirectory(out_dir.c_str());
 
-	bool ret_val = false;
+	unsigned int ret_val;
+
 	// Get archive type
 	// Unpack depending on archive type
-	is_archive = true;
 	if (IsZipFile(&header_buf[0], read_size))
 		ret_val = ZipUnpack(out_dir);
 	else if (IsRarFile(&header_buf[0], read_size))
 		ret_val = RarUnpack(out_dir);
 	else
-		is_archive = false;
+		ret_val = UNPACK_NOT_ARCHIVE;
 
 	SetCurrentDirectory(prev_dir);
 
 	return ret_val;
 }
 
-bool Unpacker::ZipUnpack(const StlString& out_dir)
+unsigned int Unpacker::ZipUnpack(const StlString& out_dir)
 {
 	// Since MINIZIP works only with non-unicode file names,
 	// we should copy input file to such file.
 	char temp_file_name_buf[MAX_PATH];
-	if (0 == GetTempFileNameA(".", "temp_archive", 0, temp_file_name_buf))
+	if (0 == GetTempFileNameA(".", "tmp", 0, temp_file_name_buf))
 	{
 		LOG(("[ZipUnpack] ERROR: cannot get temp file name\n"));
-		return false;
+		return UNPACK_SYSTEM_ERROR;
 	}
 
 	string temp_file_name(temp_file_name_buf);
@@ -95,20 +96,19 @@ bool Unpacker::ZipUnpack(const StlString& out_dir)
 		(StlString(temp_file_name.begin(), temp_file_name.end())).c_str(), FALSE))
 	{
 		LOG(("[ZipUnpack] ERROR: cannot copy archive to temp file\n"));
-		return false;
+		return UNPACK_NO_SPACE;
 	}
 
 	zlib_filefunc_def ffunc;
 	fill_win32_filefunc(&ffunc);
 
-	bool ret_val = false;
+	unsigned int ret_val = UNPACK_SYSTEM_ERROR;
 
 	unzFile uf = unzOpen2(temp_file_name.c_str(), &ffunc);
 	if (!uf)
 		goto __end;
 
-	int extract_result = do_extract(uf, 0, 0, NULL);
-	ret_val = (0 == extract_result);
+	ret_val = do_extract(uf, 0, 0, NULL);
 
 	unzClose(uf);
 
@@ -118,9 +118,9 @@ __end:
 	return ret_val;
 }
 
-bool Unpacker::RarUnpack(const StlString& out_dir)
+unsigned int Unpacker::RarUnpack(const StlString& out_dir)
 {
-	bool ret_val = false;
+	unsigned int ret_val = UNPACK_SUCCESS;
 	char comment_buf[1024];
 
 	RAROpenArchiveDataEx archive_data;
@@ -147,8 +147,35 @@ bool Unpacker::RarUnpack(const StlString& out_dir)
 	{
 		int pf_code = RARProcessFile(archive_handle, RAR_EXTRACT, NULL, NULL);//TODO add -W
 		LOG(("RARProcessFile() returned %d\n", pf_code));
-		ret_val = true; // Return true if at least one file has been unpacked
+		switch (pf_code)
+		{
+		case 0:
+			ret_val = UNPACK_SUCCESS;
+			break;
+
+		case ERAR_ECREATE:
+		case ERAR_EWRITE:
+			ret_val = UNPACK_NO_SPACE;
+			break;
+
+		case ERAR_BAD_DATA:
+		case ERAR_BAD_ARCHIVE:
+		case ERAR_UNKNOWN_FORMAT:
+			ret_val = UNPACK_INVALID_ARCHIVE;
+			break;
+
+		case ERAR_MISSING_PASSWORD:
+			ret_val = UNPACK_NO_PASSWORD;
+			break;
+
+		default:
+			ret_val = UNPACK_SYSTEM_ERROR;
+			break;
+		}
 	}
+
+	if (ERAR_BAD_DATA == rh_code)
+		ret_val = UNPACK_INVALID_ARCHIVE;
 
 	RARCloseArchive(archive_handle);
 

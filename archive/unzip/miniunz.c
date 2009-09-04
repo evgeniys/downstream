@@ -32,7 +32,8 @@
 #include "iowin32.h"
 #endif
 
-#define LOG(x) printf x //test
+#include "common/consts.h"
+#include "common/logging.h"
 
 /*
   mini unzip, demo of unzip package
@@ -359,7 +360,7 @@ int do_extract_currentfile(uf,popt_extract_without_path,popt_overwrite,password)
                     if (fwrite(buf,err,1,fout)!=1)
                     {
                         LOG(("error in writing extracted file\n"));
-                        err=UNZ_ERRNO;
+                        err=UNZ_WRITEERROR;
                         break;
                     }
             }
@@ -393,6 +394,7 @@ int do_extract(unzFile uf,
 			   int opt_overwrite,
 			   const char* password)
 {
+	int ret_val = UNPACK_SYSTEM_ERROR;
     uLong i;
     unz_global_info gi;
     int err;
@@ -404,10 +406,17 @@ int do_extract(unzFile uf,
 
     for (i=0;i<gi.number_entry;i++)
     {
-        if (do_extract_currentfile(uf,&opt_extract_without_path,
-                                      &opt_overwrite,
-                                      password) != UNZ_OK)
+		int extract_result;
+		
+		extract_result = do_extract_currentfile(uf,&opt_extract_without_path, &opt_overwrite, password);
+        if (extract_result != UNZ_OK)
+		{
+			if (UNZ_WRITEERROR == extract_result)
+				ret_val = UNPACK_NO_SPACE;
             break;
+		}
+		else
+			ret_val = UNPACK_SUCCESS;
 
         if ((i+1)<gi.number_entry)
         {
@@ -420,5 +429,5 @@ int do_extract(unzFile uf,
         }
     }
 
-    return 0;
+    return ret_val;
 }

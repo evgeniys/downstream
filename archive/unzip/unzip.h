@@ -75,6 +75,7 @@ typedef voidp unzFile;
 #define UNZ_BADZIPFILE                  (-103)
 #define UNZ_INTERNALERROR               (-104)
 #define UNZ_CRCERROR                    (-105)
+#define UNZ_WRITEERROR                  (-106)
 
 /* tm_unz contain date/time info */
 typedef struct tm_unz_s

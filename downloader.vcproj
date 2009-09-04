@@ -220,10 +220,6 @@
 					>
 				</File>
 				<File
-					RelativePath=".\engine\unpacker.h"
-					>
-				</File>
-				<File
 					RelativePath=".\engine\webfile.h"
 					>
 				</File>
@@ -245,10 +241,6 @@
 				</File>
 				<File
 					RelativePath=".\engine\state.cpp"
-					>
-				</File>
-				<File
-					RelativePath=".\engine\unpacker.cpp"
 					>
 				</File>
 				<File

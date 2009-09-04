@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 
+extern "C"
 void __cdecl Log(const char *fmt, ...)
 {
 	va_list args;

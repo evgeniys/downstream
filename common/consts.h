@@ -15,4 +15,12 @@
 // File part size (100 MB)
 #define PART_SIZE (100 * 1024 * 1024)
 
+// Unpack results
+#define UNPACK_SUCCESS      0
+#define UNPACK_NOT_ARCHIVE  1
+#define UNPACK_NO_SPACE     2
+#define UNPACK_INVALID_ARCHIVE 3
+#define UNPACK_SYSTEM_ERROR 4
+#define UNPACK_NO_PASSWORD  5
+
 #endif
