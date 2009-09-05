@@ -353,8 +353,6 @@ void Downloader::Run()
 
 	total_progress_size_ = 0;
 
-	list <StlString> file_name_list;
-
 	bool abort = false;
 
 __restart:
@@ -370,7 +368,7 @@ __restart:
 		{
 			if (CheckMd5(iter->url_, file_name))
 			{
-				file_name_list.push_back(file_name);
+				iter->file_name_ = file_name;
 				iter->finished_ = true;
 			}
 			else
@@ -448,13 +446,13 @@ __next_iteration:
 	bool unpack_success = true;
 	bool at_least_one_archive = false;
 	// Process file_name list (try to unpack files)
-	for (list<StlString>::iterator iter = file_name_list.begin();
-		iter != file_name_list.end(); iter++) 
+	for (FileDescriptorList::iterator iter = file_desc_list_.begin(); 
+		iter != file_desc_list_.end(); )
 	{
-		if (!IsPartOfMultipartArchive(*iter))
+		if (iter->finished_ && !IsPartOfMultipartArchive(iter->file_name_))
 		{
 			unsigned int unpack_result;
-			unpack_result = UnpackFile(*iter);
+			unpack_result = UnpackFile(iter->file_name_);
 			if (UNPACK_NO_SPACE == unpack_result)
 			{
 				Message::Show(_T("Insufficient disk space to perform file\r\n")

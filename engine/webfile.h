@@ -62,6 +62,8 @@ private:
 	std::vector <WebFileSegment *> segments_;
 	unsigned int flags_;
 
+	size_t part_num_;
+
 	unsigned int download_status_;
 
 	size_t downloaded_size_; // lock_ MUST be held when accessing this member
@@ -87,20 +89,43 @@ private:
 
 	/* Serialization */
 	friend class boost::serialization::access;
+
 	template<class Archive>
-	void serialize(Archive & ar, const unsigned int version)
+	void save(Archive & ar, const unsigned int version)
+	{
+		Lock(lock_);
+		ar & url_;
+		ar & fname_;
+		ar & segments_.size();
+		ar & file_size_;
+		ar & download_status_;
+		ar & downloaded_size_;
+		ar & part_num_;
+		for (int i = 0; i < segments_.size(); i++) 
+			ar & *(segments_[i]);
+		Unlock(lock_);
+	}
+	template<class Archive>
+	void load(Archive & ar, const unsigned int version)
 	{
 		if (version > 0)
 			return;
+		Lock(lock_);
 		ar & url_;
 		ar & fname_;
 		ar & thread_count_;
 		ar & file_size_;
-		ar & download_status_;
+		unsigned int status;
+		ar & status;
+		SetStatus(status); // download_status_ should be set atomically
 		ar & downloaded_size_;
-		//TODO: fix serialization
+		ar & part_num_;
+		flags_ = 0;
+		segments_.resize(thread_count_);
+		for (int i = 0; i < segments_.size(); i++) 
+			ar & *(segments_[i]);
+		Unlock(lock_);
 	}
-
 };
 
 #endif

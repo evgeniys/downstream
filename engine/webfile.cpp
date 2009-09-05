@@ -27,6 +27,7 @@ WebFile::WebFile(const std::string& url, const StlString& fname,
 	continue_event_ = continue_event;
 	stop_event_ = stop_event;
 	flags_ = 0;
+	part_num_ = 0;
 	SetStatus(STATUS_DOWNLOAD_NOT_STARTED);
 }
 
@@ -79,8 +80,6 @@ void WebFile::NotifyDownloadProgress(WebFileSegment *sender, unsigned long long 
 	WriteFile(file_handle_, data, (DWORD)size, &nr_written, NULL);
 	assert((size_t)nr_written == size);
 	Unlock(&lock_);
-
-	//FIXME: resuming support is postponed
 }
 
 void WebFile::UpdateThreadCount(unsigned int thread_count)
@@ -96,9 +95,9 @@ unsigned __stdcall WebFile::FileThread(void *arg)
 
 	// Every file is split into parts
 
-	size_t part_count = (size_t)(file->file_size_ / PART_SIZE);
-	if (file->file_size_ % PART_SIZE)
-		part_count++;
+//	size_t part_count = (size_t)(file->file_size_ / PART_SIZE);
+//	if (file->file_size_ % PART_SIZE)
+//		part_count++;
 	unsigned long long offset = 0;
 
 	file->file_handle_ = OpenOrCreate(file->fname_, GENERIC_WRITE);
@@ -110,7 +109,7 @@ unsigned __stdcall WebFile::FileThread(void *arg)
 
 	file->SetStatus(STATUS_DOWNLOAD_STARTED);
 
-	for (size_t part_num = 0; offset < file->file_size_; ) 
+	for (size_t part_num = file->part_num_; offset < file->file_size_; ) 
 	{
 		unsigned long long part_size = PART_SIZE;
 		if (offset + PART_SIZE >= file->file_size_)
@@ -156,7 +155,7 @@ bool WebFile::DownloadPart(size_t part_num, unsigned long long offset,
 	unsigned long long seg_offset = 0;
 	for (unsigned i = 0; i < thread_count; i++, seg_offset += seg_size) 
 	{
-		WebFileSegment *seg = new WebFileSegment(this, url_, offset,
+		WebFileSegment *seg = new WebFileSegment(this, url_, 
 			offset + seg_offset, i == thread_count - 1 ? size - seg_offset : seg_size, 
 			pause_event_, continue_event_, stop_event_);
 		seg->Start();

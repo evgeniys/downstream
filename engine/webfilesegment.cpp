@@ -17,31 +17,30 @@ using namespace std;
 
 WebFileSegment::WebFileSegment(WebFile *file, 
 							   const std::string& url, 
-							   unsigned long long part_offset,
 							   unsigned long long seg_offset, 
 							   unsigned long long size, 
 							   HANDLE pause_event, 
 							   HANDLE continue_event,
 							   HANDLE stop_event)
-: file_(file), url_(url), part_offset_(part_offset), seg_offset_(seg_offset), 
+: file_(file), url_(url), seg_offset_(seg_offset), 
  size_(size), pause_event_(pause_event), 
  continue_event_(continue_event), stop_event_(stop_event)
 {
 	thread_ = NULL;
-	attempt_count_ = 0;
 	downloaded_size_ = 0;
 	SetStatus(STATUS_DOWNLOAD_NOT_STARTED);
+	InitLock(&lock_);
 }
 
 WebFileSegment::~WebFileSegment()
 {
 	if (thread_)
 		CloseHandle(thread_);
+	CloseLock(&lock_);
 }
 
 bool WebFileSegment::Start()
 {
-	attempt_count_++;
 	unsigned thread_id;
 	thread_ = (HANDLE)_beginthreadex(NULL, 0, FileSegmentThread, this, 0, &thread_id);
 	return thread_ != NULL;
@@ -78,11 +77,14 @@ size_t WebFileSegment::DownloadWriteDataCallback(void *buffer, size_t size, size
 	}
 	if (WAIT_OBJECT_0 == WaitForSingleObject(seg->pause_event_, 0))
 		return CURL_WRITEFUNC_PAUSE;
+	Lock(&seg->lock_);
 	size_t nr_write = nmemb * size;
+	ULONG64 position = seg->seg_offset_ + seg->downloaded_size_;
 	LOG(("[DownloadWriteDataCallback] tid=0x%x, position=0x%x, size=0x%x\n", 
-		GetCurrentThreadId(), seg->position_, nr_write));
-	seg->file_->NotifyDownloadProgress(seg, seg->position_, buffer, nr_write);
-	seg->position_ += nr_write;
+		GetCurrentThreadId(), position, nr_write));
+	seg->file_->NotifyDownloadProgress(seg, position, buffer, nr_write);
+	seg->downloaded_size_ += nr_write;
+	Unlock(&seg->lock_);
 	return nmemb;		 
 }
 
@@ -157,8 +159,9 @@ __download:
 
 	// Set file position
 	CHAR range_header[1024];
+	ULONG64 range_start = seg->seg_offset_ + seg->downloaded_size_;
 	_snprintf(range_header, _countof(range_header), "Range: bytes=%lld-%lld", 
-		seg->seg_offset_, seg->seg_offset_ + seg->size_ - 1);
+		range_start, seg->seg_offset_ + seg->size_ - 1);
 	struct curl_slist *headers = NULL;
 	headers = curl_slist_append(headers, range_header);
 	if (!headers)
@@ -169,7 +172,6 @@ __download:
 	}
 	curl_easy_setopt(seg->http_handle_, CURLOPT_HTTPHEADER, headers);
 
-	seg->position_ = seg->seg_offset_;
 	CURLcode download_result = curl_easy_perform(seg->http_handle_);
 	if (0 == download_result)
 		seg->SetStatus(STATUS_DOWNLOAD_FINISHED);

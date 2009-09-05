@@ -10,7 +10,6 @@ class WebFileSegment
 public:
 	WebFileSegment(class WebFile *file,
 				const std::string& url, 
-				unsigned long long part_offset,
 				unsigned long long seg_offset, 
 				unsigned long long size, 
 				HANDLE pause_event,
@@ -29,23 +28,16 @@ public:
 
 	std::string &GetUrl() { return url_; }
 
-	unsigned long long GetPartOffset() { return part_offset_; }
-
 	unsigned long long GetSegOffset() { return seg_offset_; }
 
 	unsigned int GetStatus() { return download_status_; }
-
-	int GetAttemptCount() { return attempt_count_; }
 
 	HANDLE GetThreadHandle() { return thread_; } 
 
 private:
 	std::string url_;
-	unsigned long long part_offset_;
 	unsigned long long seg_offset_;
 	unsigned long long size_;
-
-	int attempt_count_;
 
 	size_t downloaded_size_;
 	unsigned int download_status_;
@@ -61,9 +53,8 @@ private:
 	class WebFile *file_;
 	HANDLE thread_;
 	void *http_handle_;
+	lock_t lock_;
 
-	unsigned long long position_;
-	
 	static unsigned __stdcall FileSegmentThread(void *arg);
 
 	void SetStatus(unsigned int status);
@@ -75,14 +66,28 @@ private:
 
 	/* Serialization */
 	friend class boost::serialization::access;
+
 	template<class Archive>
-	void serialize(Archive & ar, const unsigned int version)
+	void save(Archive & ar, const unsigned int version)
+	{
+		Lock(&lock_);
+		ar & download_status_;
+		ar & seg_offset_;
+		ar & downloaded_size_;
+		Unlock(&lock_);
+	}
+	template<class Archive>
+	void load(Archive & ar, const unsigned int version)
 	{
 		if (version > 0)
 			return;
-		ar & download_status_;
+		Lock(&lock_);
+		unsigned int status;
+		ar & status;
+		SetStatus(status); // download_status_ should be set atomically
+		ar & seg_offset_;
 		ar & downloaded_size_;
-		ar & attempt_count_;
+		Unlock(&lock_);
 	}
 };
 
