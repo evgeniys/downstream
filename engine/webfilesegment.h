@@ -3,6 +3,7 @@
 
 #include "common/types.h"
 #include <boost/serialization/access.hpp>
+#include <boost/serialization/split_member.hpp>
 #include "curl/curl.h"
 
 class WebFileSegment
@@ -15,6 +16,12 @@ public:
 				HANDLE pause_event,
 				HANDLE continue_event,
 				HANDLE stop_event);
+
+	WebFileSegment(class WebFile *file, 
+					const std::string& url, 
+					HANDLE pause_event, 
+					HANDLE continue_event, 
+					HANDLE stop_event);
 
 	virtual ~WebFileSegment();
 
@@ -40,6 +47,7 @@ private:
 	unsigned long long size_;
 
 	size_t downloaded_size_;
+	size_t cached_downloaded_size_;
 	unsigned int download_status_;
 
 
@@ -53,7 +61,6 @@ private:
 	class WebFile *file_;
 	HANDLE thread_;
 	void *http_handle_;
-	lock_t lock_;
 
 	static unsigned __stdcall FileSegmentThread(void *arg);
 
@@ -68,27 +75,28 @@ private:
 	friend class boost::serialization::access;
 
 	template<class Archive>
-	void save(Archive & ar, const unsigned int version)
+	void save(Archive & ar, const unsigned int version) const
 	{
-		Lock(&lock_);
 		ar & download_status_;
 		ar & seg_offset_;
-		ar & downloaded_size_;
-		Unlock(&lock_);
+		ar & size_;
+		ar & cached_downloaded_size_;
 	}
 	template<class Archive>
 	void load(Archive & ar, const unsigned int version)
 	{
 		if (version > 0)
 			return;
-		Lock(&lock_);
 		unsigned int status;
 		ar & status;
 		SetStatus(status); // download_status_ should be set atomically
 		ar & seg_offset_;
+		ar & size_;
 		ar & downloaded_size_;
-		Unlock(&lock_);
+		cached_downloaded_size_ = downloaded_size_;
 	}
+	BOOST_SERIALIZATION_SPLIT_MEMBER()
+
 };
 
 

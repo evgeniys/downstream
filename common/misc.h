@@ -5,6 +5,8 @@
 
 bool HttpGetFileSize(const std::string& url, __out unsigned long long& file_size);
 
+bool GetDiskFileSize(const StlString& fname, __out unsigned long long& file_size);
+
 bool HttpReadFileToBuffer(const std::string& url, void *buf, size_t size, __out size_t& read_size);
 
 bool SetProxyForHttpHandle(void *http_handle);

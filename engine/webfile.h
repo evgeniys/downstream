@@ -6,17 +6,28 @@
 #include <boost/serialization/list.hpp>
 #include <boost/serialization/string.hpp>
 #include <boost/serialization/version.hpp>
+#include <boost/serialization/access.hpp>
+#include <boost/serialization/split_member.hpp>
 
 class WebFileSegment;
 
-#define FILE_THREAD_COUNT_CHANGED 0x00000001
+#define FILE_THREAD_COUNT_CHANGED 0x00000001 // Thread count has been changed and
+											 // re-download should be performed for current part
+
+#define FILE_RESTORED             0x00000002 // File has been restored from serialized state
 
 class WebFile
 {
 public:
 	WebFile(const std::string &url, const StlString& fname, 
-			unsigned int thread_count,
-			HANDLE pause_event, HANDLE continue_event, HANDLE stop_event);
+		unsigned int thread_count,
+		HANDLE pause_event, HANDLE continue_event, HANDLE stop_event);
+
+	void Init(const std::string &url, const StlString& fname, 
+		unsigned int thread_count,
+		HANDLE pause_event, HANDLE continue_event, HANDLE stop_event);
+
+	WebFile(HANDLE pause_event, HANDLE continue_event, HANDLE stop_event);
 
 	virtual ~WebFile();
 
@@ -24,6 +35,7 @@ public:
 	void Stop();
 	bool WaitForFinish(DWORD timeout);
 	bool Terminate();
+	std::string GetUrl() { return url_; }
 
 	/**
 	 *	Update thread count; restart currently downloaded part.
@@ -35,10 +47,13 @@ public:
 	 *	Called from Downloader.
 	 */
 	void GetDownloadStatus(__out unsigned int& status, 
-						   __out size_t& downloaded_size, 
-						   __out size_t& increment);
+						   __out unsigned long long& downloaded_size, 
+						   __out unsigned long long& increment);
 
 	unsigned long long GetSize() { return file_size_; }
+
+	void Down() { Lock(&lock_); }
+	void Up() { Unlock(&lock_); }
 
 protected:
 
@@ -66,8 +81,8 @@ private:
 
 	unsigned int download_status_;
 
-	size_t downloaded_size_; // lock_ MUST be held when accessing this member
-	size_t increment_;
+	unsigned long long downloaded_size_; // lock_ MUST be held when accessing this member
+	unsigned long long increment_;
 
 	friend class WebFileSegment;
 
@@ -91,26 +106,24 @@ private:
 	friend class boost::serialization::access;
 
 	template<class Archive>
-	void save(Archive & ar, const unsigned int version)
+	void save(Archive & ar, const unsigned int version) const
 	{
-		Lock(lock_);
 		ar & url_;
 		ar & fname_;
-		ar & segments_.size();
+		unsigned int seg_size = (unsigned int)segments_.size();
+		ar & seg_size;
 		ar & file_size_;
 		ar & download_status_;
 		ar & downloaded_size_;
 		ar & part_num_;
-		for (int i = 0; i < segments_.size(); i++) 
+		for (size_t i = 0; i < segments_.size(); i++) 
 			ar & *(segments_[i]);
-		Unlock(lock_);
 	}
 	template<class Archive>
 	void load(Archive & ar, const unsigned int version)
 	{
 		if (version > 0)
 			return;
-		Lock(lock_);
 		ar & url_;
 		ar & fname_;
 		ar & thread_count_;
@@ -120,12 +133,16 @@ private:
 		SetStatus(status); // download_status_ should be set atomically
 		ar & downloaded_size_;
 		ar & part_num_;
-		flags_ = 0;
+		flags_ = FILE_RESTORED;
 		segments_.resize(thread_count_);
-		for (int i = 0; i < segments_.size(); i++) 
+		for (size_t i = 0; i < segments_.size(); i++) 
+		{
+			segments_[i] = new WebFileSegment(this, url_, 
+							pause_event_, continue_event_, stop_event_);
 			ar & *(segments_[i]);
-		Unlock(lock_);
+		}
 	}
+	BOOST_SERIALIZATION_SPLIT_MEMBER()
 };
 
 #endif

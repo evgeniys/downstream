@@ -72,6 +72,23 @@ bool HttpGetFileSize(const std::string& url, __out unsigned long long& file_size
 	return ret_val;
 }
 
+bool GetDiskFileSize(const StlString& fname, __out unsigned long long& file_size)
+{
+	HANDLE file_handle = CreateFile(fname.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 
+		0, NULL);
+	if (INVALID_HANDLE_VALUE == file_handle)
+		return false;
+
+	ULARGE_INTEGER lsize;
+
+	lsize.LowPart = GetFileSize(file_handle, &lsize.HighPart);
+
+	file_size = lsize.QuadPart;
+
+	return true;
+}
+
+
 typedef struct _HTTP_READ_DATA {
 	void *buf_;
 	size_t size_;

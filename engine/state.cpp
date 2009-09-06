@@ -21,7 +21,7 @@ bool State::Load()
 		ia >> (*this);
 		ifs.close();
 	}
-	catch (...) {
+	catch (boost::archive::archive_exception& ) {
 		ret_val = false;
 	}
 	return ret_val;
@@ -37,7 +37,7 @@ bool State::Save()
 		oa << (*this);
 		ofs.close();
 	}
-	catch (...) {
+	catch (boost::archive::archive_exception& ) {
 		ret_val = false;
 	}
 	return ret_val;

@@ -6,6 +6,8 @@
 #include "engine/state.h"
 #include <string>
 #include <list>
+#include <boost/serialization/access.hpp>
+#include <boost/serialization/split_member.hpp>
 
 typedef std::vector <std::string> UrlList;
 
@@ -22,9 +24,15 @@ struct FileDescriptor {
 	unsigned int thread_count_;
 	std::list<std::string> md5_list_;
 	unsigned int change_flags_;
+	ULONG64 file_size_;
 	FileDescriptor(std::string& url)
 		: url_(url), thread_count_(0), change_flags_(0), 
-		finished_(false), file_name_(_T(""))
+		finished_(false), file_name_(_T("")), file_size_(0)
+	{
+	}
+	FileDescriptor()
+		: url_(""), thread_count_(0), change_flags_(0), 
+		finished_(false), file_name_(_T("")), file_size_(0)
 	{
 	}
 	void Update(unsigned int thread_count, std::list<std::string> md5_list);
@@ -32,13 +40,14 @@ struct FileDescriptor {
 	friend class boost::serialization::access;
 
 	template<class Archive>
-	void save(Archive & ar, const unsigned int version)
+	void save(Archive & ar, const unsigned int version) const
 	{
 		ar & finished_;
 		ar & url_;
 		ar & file_name_;
 		ar & thread_count_;
 		ar & md5_list_;
+		ar & file_size_;
 	}
 
 	template<class Archive>
@@ -51,11 +60,16 @@ struct FileDescriptor {
 		ar & file_name_;
 		ar & thread_count_;
 		ar & md5_list_;
+		ar & file_size_;
 		change_flags_ = 0;
 	}
+	BOOST_SERIALIZATION_SPLIT_MEMBER()
+
 };
 
 typedef std::list <FileDescriptor> FileDescriptorList;
+
+class WebFile;
 
 class Downloader
 {
@@ -108,9 +122,8 @@ private:
 
 	bool IsEnoughFreeSpace(void);
 
-	unsigned int PerformDownload(const std::string& url, 
-								 unsigned int thread_count,
-								 __out StlString& file_name);
+	unsigned int PerformDownload(FileDescriptor& file_desc);
+	unsigned int DownloadFile(std::string url, WebFile& file);
 
 	bool CheckMd5(const std::string& url, const StlString& file_name);
 
@@ -122,6 +135,14 @@ private:
 	unsigned int UnpackFile(const StlString& fname);
 
 	ULONG64 EstimateTotalSize();
+
+	bool LoadDownloadState(__out WebFile& file);
+	bool SaveDownloadState(WebFile& file);
+	void EraseDownloadState();
+
+	bool GetFileNameFromUrl(const std::string& url, __out StlString& fname);
+
+	void EstimateTotalProgressFromList();
 };
 
 #endif

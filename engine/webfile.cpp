@@ -10,6 +10,7 @@ using namespace std;
 #include "engine/webfilesegment.h"
 #include "common/consts.h"
 #include "common/misc.h"
+#include "common/logging.h"
 
 WebFile::WebFile(const std::string& url, const StlString& fname, 
 				 unsigned int thread_count,
@@ -27,6 +28,42 @@ WebFile::WebFile(const std::string& url, const StlString& fname,
 	continue_event_ = continue_event;
 	stop_event_ = stop_event;
 	flags_ = 0;
+	part_num_ = 0;
+	SetStatus(STATUS_DOWNLOAD_NOT_STARTED);
+}
+
+WebFile::WebFile(HANDLE pause_event, HANDLE continue_event, HANDLE stop_event)
+{
+	InitLock(&lock_);
+	url_ = "";
+	fname_ = _T("");
+	downloaded_size_ = 0;
+	increment_ = 0;
+	thread_count_ = 0;
+	file_handle_ = INVALID_HANDLE_VALUE;
+
+	pause_event_ = pause_event;
+	continue_event_ = continue_event;
+	stop_event_ = stop_event;
+	flags_ = 0;
+	part_num_ = 0;
+	SetStatus(STATUS_DOWNLOAD_NOT_STARTED);
+}
+
+void WebFile::Init(const std::string &url, const StlString& fname, unsigned int thread_count, HANDLE pause_event, HANDLE continue_event, HANDLE stop_event)
+{
+	InitLock(&lock_);
+	url_ = "";
+	fname_ = _T("");
+	downloaded_size_ = 0;
+	increment_ = 0;
+	thread_count_ = 0;
+	file_handle_ = INVALID_HANDLE_VALUE;
+
+	pause_event_ = pause_event;
+	continue_event_ = continue_event;
+	stop_event_ = stop_event;
+	flags_ = FILE_RESTORED;
 	part_num_ = 0;
 	SetStatus(STATUS_DOWNLOAD_NOT_STARTED);
 }
@@ -66,12 +103,16 @@ bool WebFile::WaitForFinish(DWORD timeout)
 	return WAIT_OBJECT_0 == WaitForSingleObject(thread_handle_, timeout);
 }
 
-void WebFile::NotifyDownloadProgress(WebFileSegment *sender, unsigned long long offset, void *data, size_t size)
+void WebFile::NotifyDownloadProgress(WebFileSegment *sender, 
+									 unsigned long long offset, 
+									 void *data, size_t size)
 {
 	Lock(&lock_);
 	// Update total progress counter
 	downloaded_size_ += size;
 	increment_ += size;
+	LOG(("[NotifyDownloadProgress] size=0x%p downloaded_size_=0x%llx, increment_=0x%llx, offset=0x%llx\r\n", 
+		size, downloaded_size_, increment_, offset));
 	// Write data to file
 	LARGE_INTEGER tmp;
 	tmp.QuadPart = offset;
@@ -95,9 +136,6 @@ unsigned __stdcall WebFile::FileThread(void *arg)
 
 	// Every file is split into parts
 
-//	size_t part_count = (size_t)(file->file_size_ / PART_SIZE);
-//	if (file->file_size_ % PART_SIZE)
-//		part_count++;
 	unsigned long long offset = 0;
 
 	file->file_handle_ = OpenOrCreate(file->fname_, GENERIC_WRITE);
@@ -128,7 +166,7 @@ unsigned __stdcall WebFile::FileThread(void *arg)
 	}
 
 	unsigned int status;
-	size_t size, increment;
+	unsigned long long size, increment;
 	file->GetDownloadStatus(status, size, increment);
 	if (STATUS_DOWNLOAD_FAILURE != status)
 		file->SetStatus(STATUS_DOWNLOAD_FINISHED);
@@ -143,23 +181,30 @@ __end:
 bool WebFile::DownloadPart(size_t part_num, unsigned long long offset, 
 						   unsigned long long size, unsigned int thread_count)
 {
-	TCHAR part_num_str[10];
-	_itot((int)part_num + 1, part_num_str, 10);
-	StlString part_fname = fname_ + _T(".part") + part_num_str;
-
-	// Divide part into segments (1 segment per thread)
-	unsigned long long seg_size = size / thread_count;
-
 	Lock(&lock_);
-	segments_.resize(thread_count);
-	unsigned long long seg_offset = 0;
-	for (unsigned i = 0; i < thread_count; i++, seg_offset += seg_size) 
+
+	if (0 == (flags_ & FILE_RESTORED))
 	{
-		WebFileSegment *seg = new WebFileSegment(this, url_, 
-			offset + seg_offset, i == thread_count - 1 ? size - seg_offset : seg_size, 
-			pause_event_, continue_event_, stop_event_);
-		seg->Start();
-		segments_[i] = seg;
+		// Divide part into segments (1 segment per thread)
+		unsigned long long seg_size = size / thread_count;
+		segments_.resize(thread_count);
+		unsigned long long seg_offset = 0;
+		for (unsigned i = 0; i < thread_count; i++, seg_offset += seg_size) 
+		{
+			WebFileSegment *seg;
+			seg = new WebFileSegment(this, url_, 
+				offset + seg_offset, i == thread_count - 1 ? size - seg_offset : seg_size, 
+				pause_event_, continue_event_, stop_event_);
+			seg->Start();
+			segments_[i] = seg;
+		}
+	}
+	else
+	{
+		// Launch restored segments
+		for (unsigned i = 0; i < thread_count; i++) 
+			(segments_[i])->Start();
+		flags_ &= ~FILE_RESTORED;
 	}
 
 	thread_handles_.resize(thread_count);
@@ -184,7 +229,9 @@ bool WebFile::DownloadPart(size_t part_num, unsigned long long offset,
 	return true;
 }
 
-void WebFile::GetDownloadStatus(__out unsigned int& status, __out size_t& downloaded_size, __out size_t& increment)
+void WebFile::GetDownloadStatus(__out unsigned int& status, 
+								__out unsigned long long& downloaded_size, 
+								__out unsigned long long& increment)
 {
 	status = download_status_;
 	Lock(&lock_);

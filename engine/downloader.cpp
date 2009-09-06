@@ -7,10 +7,15 @@
 #include <cctype>
 #include <map>
 #include <boost/regex/mfc.hpp>
+#include <fstream>
+#include <exception>
+#include <boost/archive/text_iarchive.hpp>
+#include <boost/archive/text_oarchive.hpp>
 
 #include "engine/downloader.h"
 #include "engine/state.h"
 #include "engine/webfile.h"
+#include "engine/webfilesegment.h"
 #include "gui/message.h"
 #include "gui/progressdialog.h"
 #include "gui/selectfolder.h"
@@ -309,6 +314,16 @@ bool Downloader::CheckNotFinishedDownloads()
 	return false;
 }
 
+void Downloader::EstimateTotalProgressFromList()
+{
+	for (FileDescriptorList::iterator iter = file_desc_list_.begin();
+		iter != file_desc_list_.end(); iter++) 
+	{
+		if (iter->finished_)
+			total_progress_size_ += iter->file_size_;
+	}
+}
+
 void Downloader::Run()
 {
 	if (!init_ok_)
@@ -355,21 +370,50 @@ void Downloader::Run()
 
 	bool abort = false;
 
+	// Try to load download state. If successfully loaded, restart downloading
+	// at the saved point.
+	FileDescriptorList::iterator iter;
+	WebFile loaded_file(pause_event_, continue_event_, stop_event_);
+	if (LoadDownloadState(loaded_file))
+	{
+		EstimateTotalProgressFromList();
+		iter = FindDescriptor(loaded_file.GetUrl());
+		if (iter != file_desc_list_.end())
+		{
+			StlString wurl(iter->url_.begin(), iter->url_.end());
+
+			progress_dlg_->SetDisplayedData(wurl, 0, 0, 0);
+			progress_dlg_->Show(true);
+
+			if (DownloadFile(iter->url_, loaded_file))
+			{
+				if (CheckMd5(iter->url_, iter->file_name_))
+				{
+					iter->finished_ = true;
+					GetDiskFileSize(iter->file_name_, iter->file_size_);
+				}
+			}
+		}
+	}
+
 __restart:
-	for (FileDescriptorList::iterator iter = file_desc_list_.begin(); 
-											iter != file_desc_list_.end(); )
+
+	for (iter = file_desc_list_.begin(); iter != file_desc_list_.end(); )
 	{
 		StlString file_name;
 		if (iter->finished_)
 			goto __next_iteration;
-		unsigned int download_status = PerformDownload(
-			iter->url_, iter->thread_count_, file_name);
+
+		if (!GetFileNameFromUrl(iter->url_, iter->file_name_))
+			return;
+
+		unsigned int download_status = PerformDownload(*iter);
 		if (STATUS_DOWNLOAD_FINISHED == download_status)
 		{
-			if (CheckMd5(iter->url_, file_name))
+			if (CheckMd5(iter->url_, iter->file_name_))
 			{
-				iter->file_name_ = file_name;
 				iter->finished_ = true;
+				GetDiskFileSize(iter->file_name_, iter->file_size_);
 			}
 			else
 			{
@@ -436,18 +480,17 @@ __next_iteration:
 	progress_dlg_->WaitForClosing(INFINITE);
 	delete progress_dlg_;
 
-	// If user pressed 'Exit' without downloading all files, save state and exit
+	// If user pressed 'Exit' without downloading all files, exit
 	if (abort)
-	{
-		// FIXME save state
 		return;
-	}
+
+	EraseDownloadState();
 
 	bool unpack_success = true;
 	bool at_least_one_archive = false;
 	// Process file_name list (try to unpack files)
 	for (FileDescriptorList::iterator iter = file_desc_list_.begin(); 
-		iter != file_desc_list_.end(); )
+		iter != file_desc_list_.end(); iter++)
 	{
 		if (iter->finished_ && !IsPartOfMultipartArchive(iter->file_name_))
 		{
@@ -526,13 +569,9 @@ bool Downloader::CheckFileDescriptors(const std::string& current_url,
 		return false;
 }
 
-unsigned int Downloader::PerformDownload(const string& url, 
-										 unsigned int thread_count,
-										 __out StlString& file_name)
+bool Downloader::GetFileNameFromUrl(const std::string& url, __out StlString& fname)
 {
-	StlString tmp, fname, wurl;
-	const DWORD64 CHECK_PERIOD = 3000; //test 10 * 60 * 1000; // Check .md5 updates every 10 min
-	bool md5_changed = false;
+	StlString tmp, wurl;
 
 	wurl = StlString(url.begin(), url.end());
 
@@ -541,39 +580,46 @@ unsigned int Downloader::PerformDownload(const string& url,
 	if (-1 == pos || pos >= wurl.size() - 1)
 	{
 		Message::Show(StlString(_T("Error: invalid URL\r\n")) + wurl);
-		return STATUS_INVALID_URL;
+		return false;
 	}
-
-	progress_dlg_->SetDisplayedData(wurl, 0, 0, 0);
-	progress_dlg_->Show(true);
 
 	tmp = wurl.substr(pos + 1);
 	fname = folder_name_;
-	
+
 	if (fname.substr(fname.size() - 1, 1) != StlString(_T("\\")))
 		fname += _T("\\");
 	fname += tmp;
 
-	file_name = fname;
+	return true;
+}
 
-	WebFile file(url, fname, thread_count, pause_event_, continue_event_, stop_event_);
-
+unsigned int Downloader::DownloadFile(std::string url, WebFile& file)
+{
+	bool md5_changed = false;
+	// Check .md5 updates every 10 min. Save download state every 1 sec.
+	const DWORD64 SAVE_PERIOD = 1000, MD5_CHECK_PERIOD = 10 * 60 * 1000; 
 	unsigned int ret_val = STATUS_DOWNLOAD_FAILURE;
 
 	if (!file.Start())
 		return ret_val;
 
-	FILETIME ft_start, ft_current, ft;
-	GetTime(ft);
+	FILETIME ft_start, ft_current, ft_md5_check, ft_save;
+	GetTime(ft_save);
+	GetTime(ft_md5_check);
 	GetTime(ft_start);
 
 	unsigned int status;
-	size_t downloaded_size;
+	unsigned long long downloaded_size;
 	for ( ; ; )
 	{
-		if (GetTimeDiff(ft) >= CHECK_PERIOD)
+		if (GetTimeDiff(ft_save) >= SAVE_PERIOD)
 		{
-			GetTime(ft);
+			GetTime(ft_save);
+			SaveDownloadState(file);
+		}
+		if (GetTimeDiff(ft_md5_check) >= MD5_CHECK_PERIOD)
+		{
+			GetTime(ft_md5_check);
 			bool thread_count_changed;
 			unsigned int new_thread_count;
 			if (CheckFileDescriptors(url, md5_changed, thread_count_changed, new_thread_count))
@@ -599,7 +645,7 @@ unsigned int Downloader::PerformDownload(const string& url,
 			}
 		}
 		GetTime(ft_current);
-		size_t increment;
+		unsigned long long increment;
 		file.GetDownloadStatus(status, downloaded_size, increment);
 		total_progress_size_ += increment;
 		if (WAIT_OBJECT_0 == WaitForSingleObject(pause_event_, 0))
@@ -611,7 +657,8 @@ unsigned int Downloader::PerformDownload(const string& url,
 		else
 		{
 			// Do not update progress if paused
-			ShowProgress(wurl, downloaded_size, file.GetSize(), ft_start, ft_current);
+			ShowProgress(StlString(url.begin(), url.end()), 
+				downloaded_size, file.GetSize(), ft_start, ft_current);
 		}
 		if (file.WaitForFinish(0))
 		{
@@ -626,7 +673,6 @@ unsigned int Downloader::PerformDownload(const string& url,
 			file.Stop();
 			if (!file.WaitForFinish(1000))
 				file.Terminate();
-			//file.GetDownloadStatus(ret_val, downloaded_size, increment);
 			ret_val = STATUS_DOWNLOAD_STOPPED;
 			break;
 		}
@@ -634,6 +680,22 @@ unsigned int Downloader::PerformDownload(const string& url,
 	}
 
 	return ret_val;
+
+}
+
+unsigned int Downloader::PerformDownload(FileDescriptor& file_desc)
+{
+	StlString tmp, fname, wurl;
+
+	wurl = StlString(file_desc.url_.begin(), file_desc.url_.end());
+
+	progress_dlg_->SetDisplayedData(wurl, 0, 0, 0);
+	progress_dlg_->Show(true);
+
+	WebFile file(file_desc.url_, file_desc.file_name_, file_desc.thread_count_, 
+		pause_event_, continue_event_, stop_event_);
+
+	return DownloadFile(file_desc.url_, file);
 }
 
 bool Downloader::CheckMd5(const std::string& url, const StlString& file_name)
@@ -653,21 +715,15 @@ bool Downloader::CheckMd5(const std::string& url, const StlString& file_name)
 		return false;
 	}
 
-
 	MD5 file_md5;
 	file_md5.reset();
 
 	bool ret_val = true;
 
-#define SMALL_CHUNKS 1
 	vector <BYTE> buf;
 
 	const unsigned int BUF_SIZE = 1024 * 1024;
-#if SMALL_CHUNKS
 	buf.resize(BUF_SIZE);
-#else
-	buf.resize(PART_SIZE);
-#endif
 
 	ULARGE_INTEGER offset, size;
 	size.LowPart = GetFileSize(file_handle, &size.HighPart);
@@ -679,9 +735,6 @@ bool Downloader::CheckMd5(const std::string& url, const StlString& file_name)
 
 		MD5 part_md5;
 		part_md5.reset();
-
-		// TODO: Measure which variant works faster: with SMALL_CHUNKS or without it
-#if SMALL_CHUNKS
 
 		ULONG64 pos = 0;
 		do {
@@ -712,24 +765,7 @@ bool Downloader::CheckMd5(const std::string& url, const StlString& file_name)
 				goto __end;
 			}
 		} while (read_size == BUF_SIZE);
-#else
 
-		if (ReadFile(file_handle, &buf[0], PART_SIZE, &read_size, NULL))
-		{
-			file_md5.append(&buf[0], read_size);
-			MD5 part_md5;
-			part_md5.reset();
-			part_md5.append(&buf[0], read_size);
-			part_md5.finish();
-			string md5_str = part_md5.getFingerprint();
-			if (md5_str != *md5_iter)
-			{
-				// MD5 is wrong
-				ret_val = false;
-				break;
-			}
-		}
-#endif
 		if (distance(md5_iter, file_desc_iter->md5_list_.end()) == 1)
 		{
 			// MD5 list is too short
@@ -777,3 +813,47 @@ void Downloader::ShowProgress(const StlString& url,
 	progress_dlg_->SetDisplayedData(url, speed, file_progress, total_progress);
 }
 
+bool Downloader::LoadDownloadState(__out WebFile& file)
+{
+	bool ret_val = true;
+	ifstream ifs;
+	try {
+		ifs.open("downloader.state", ios_base::in);
+		boost::archive::text_iarchive ia(ifs);
+		ia >> file_desc_list_;
+		file.Down();
+		ia >> file;
+		file.Up();
+		ifs.close();
+	}
+	catch (boost::archive::archive_exception& ) {
+		ret_val = false;
+	}
+	return ret_val;
+}
+
+void Downloader::EraseDownloadState()
+{
+	DeleteFileA("downloader.state");
+}
+
+bool Downloader::SaveDownloadState(WebFile& file)
+{
+	bool ret_val = true;
+	ofstream ofs;
+	
+	try {
+		ofs.open("downloader.state", ios_base::out);
+		boost::archive::text_oarchive oa(ofs);
+		oa << file_desc_list_;
+		file.Down();
+		oa << file;
+		file.Up();
+		ofs.close();
+	}
+	catch (boost::archive::archive_exception& ) {
+		ret_val = false;
+	}
+
+	return ret_val;
+}

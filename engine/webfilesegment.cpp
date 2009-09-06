@@ -28,15 +28,29 @@ WebFileSegment::WebFileSegment(WebFile *file,
 {
 	thread_ = NULL;
 	downloaded_size_ = 0;
+	cached_downloaded_size_ = 0;
 	SetStatus(STATUS_DOWNLOAD_NOT_STARTED);
-	InitLock(&lock_);
+}
+
+WebFileSegment::WebFileSegment(class WebFile *file, 
+							   const std::string& url, 
+							   HANDLE pause_event, 
+							   HANDLE continue_event, 
+							   HANDLE stop_event)
+ : file_(file), url_(url), seg_offset_(0), 
+ size_(0), pause_event_(pause_event), 
+ continue_event_(continue_event), stop_event_(stop_event)
+{
+	thread_ = NULL;
+	downloaded_size_ = 0;
+	cached_downloaded_size_ = 0;
+	SetStatus(STATUS_DOWNLOAD_NOT_STARTED);
 }
 
 WebFileSegment::~WebFileSegment()
 {
 	if (thread_)
 		CloseHandle(thread_);
-	CloseLock(&lock_);
 }
 
 bool WebFileSegment::Start()
@@ -77,14 +91,16 @@ size_t WebFileSegment::DownloadWriteDataCallback(void *buffer, size_t size, size
 	}
 	if (WAIT_OBJECT_0 == WaitForSingleObject(seg->pause_event_, 0))
 		return CURL_WRITEFUNC_PAUSE;
-	Lock(&seg->lock_);
+
+	InterlockedExchange(
+		(volatile LONG*)&seg->cached_downloaded_size_, seg->downloaded_size_);
+
 	size_t nr_write = nmemb * size;
 	ULONG64 position = seg->seg_offset_ + seg->downloaded_size_;
 	LOG(("[DownloadWriteDataCallback] tid=0x%x, position=0x%x, size=0x%x\n", 
 		GetCurrentThreadId(), position, nr_write));
 	seg->file_->NotifyDownloadProgress(seg, position, buffer, nr_write);
 	seg->downloaded_size_ += nr_write;
-	Unlock(&seg->lock_);
 	return nmemb;		 
 }
 
