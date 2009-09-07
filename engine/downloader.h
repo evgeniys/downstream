@@ -89,7 +89,7 @@ private:
 	
 	FileDescriptorList file_desc_list_;
 
-	bool GetFileDescriptorList(); // Process url_list and create file_desc_list_
+	bool GetFileDescriptorList(bool show_dialog); // Process url_list and create file_desc_list_
 
 	FileDescriptorList::iterator FindDescriptor(const std::string& url);
 

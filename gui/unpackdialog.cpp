@@ -98,7 +98,6 @@ INT_PTR CALLBACK UnpackDialog::UnpackDialogProc(HWND hwndDlg,
 }
 
 UnpackDialog::UnpackDialog()
-	
 {
 	if (dlg)
 		return;

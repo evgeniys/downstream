@@ -265,6 +265,10 @@
 				Name="headers"
 				>
 				<File
+					RelativePath=".\gui\getfilesdialog.h"
+					>
+				</File>
+				<File
 					RelativePath=".\gui\message.h"
 					>
 				</File>
@@ -284,6 +288,10 @@
 			<Filter
 				Name="source"
 				>
+				<File
+					RelativePath=".\gui\getfilesdialog.cpp"
+					>
+				</File>
 				<File
 					RelativePath=".\gui\message.cpp"
 					>

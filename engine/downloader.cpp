@@ -19,6 +19,7 @@
 #include "gui/message.h"
 #include "gui/progressdialog.h"
 #include "gui/unpackdialog.h"
+#include "gui/getfilesdialog.h"
 #include "gui/selectfolder.h"
 #include "common/misc.h"
 #include "engine/md5.h"
@@ -154,9 +155,17 @@ FileDescriptorList::iterator Downloader::FindDescriptor(const string& url)
  *	Try to get download information for URL-s specified in the program.
  *	@return true if any download details were retrieved, false otherwise
  */
-bool Downloader::GetFileDescriptorList()
+bool Downloader::GetFileDescriptorList(bool show_dialog)
 {
 	bool ret_val = false;
+	GetFilesDialog *get_files_dlg;
+
+	if (show_dialog)
+	{
+		get_files_dlg = new GetFilesDialog();
+		get_files_dlg->Create();
+		get_files_dlg->Show(true);
+	}
 
 	for (UrlList::iterator url_iter = url_list_.begin(); url_iter != url_list_.end(); url_iter++) 
 	{
@@ -173,9 +182,23 @@ bool Downloader::GetFileDescriptorList()
 				file_desc.Update(thread_count, md5_list);
 				file_desc_list_.push_back(file_desc);
 			}
+			if (show_dialog && get_files_dlg->WaitForClosing(0))
+			{
+				ret_val = false;
+				goto __end;
+			}
 			ret_val = true;
 		}
 	}
+
+__end:
+	if (show_dialog)
+	{
+		get_files_dlg->Close();
+		get_files_dlg->WaitForClosing(INFINITE);
+		delete get_files_dlg;
+	}
+
 	return ret_val;
 }
 
@@ -353,7 +376,7 @@ void Downloader::Run()
 
 	state_.Save();
 
-	if (!GetFileDescriptorList())
+	if (!GetFileDescriptorList(true))
 	{
 		// Nothing to do; get out
 		Message::Show(_T("Error: could not get download indofmation. Exiting."));
@@ -582,7 +605,7 @@ bool Downloader::CheckFileDescriptors(const std::string& current_url,
 {
 	md5_changed = false;
 	thread_count_changed = false;
-	if (GetFileDescriptorList())
+	if (GetFileDescriptorList(false))
 	{
 		bool md5_changed = false;
 		for (FileDescriptorList::iterator iter = file_desc_list_.begin(); 
