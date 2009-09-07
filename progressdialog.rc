@@ -57,16 +57,16 @@ STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | DS_CENTER | WS_MINIMIZEBOX | WS
 CAPTION "Downloader"
 FONT 8, "MS Shell Dlg", 400, 0, 0x1
 BEGIN
-    PUSHBUTTON      "Свернуть",IDC_BUTTON_TRAY,12,102,60,14
-    PUSHBUTTON      "Приостановить",IDC_BUTTON_PAUSE,162,102,60,14
+    PUSHBUTTON      "Minimize to tray",IDC_BUTTON_TRAY,12,102,60,14
+    PUSHBUTTON      "Pause",IDC_BUTTON_PAUSE,162,102,60,14
     CONTROL         "",IDC_TOTAL_PROGRESS,"msctls_progress32",WS_BORDER,12,78,360,14
     CONTROL         "",IDC_FILE_PROGRESS,"msctls_progress32",WS_BORDER,12,42,360,14
-    LTEXT           "Идет загрузка файлов.",IDC_STATIC,12,6,80,8
-    PUSHBUTTON      "Закрыть",IDCANCEL,312,102,62,14
-    LTEXT           "<file_name> <speed>",IDC_STATIC_FILE_NAME,120,18,252,8
-    LTEXT           "Прогресс загрузки файла:",IDC_STATIC,12,30,90,8
-    LTEXT           "Общий прогресс загрузки:",IDC_STATIC,12,66,91,8
-    LTEXT           "В данный момент загружается:",IDC_STATIC,12,18,107,8
+    LTEXT           "Downloading files",IDC_STATIC,12,6,56,8
+    PUSHBUTTON      "Cancel",IDCANCEL,312,102,62,14
+    LTEXT           "<file_name> <speed>",IDC_STATIC_FILE_NAME,60,18,312,8
+    LTEXT           "File download progress:",IDC_STATIC,12,30,77,8
+    LTEXT           "Total download progress:",IDC_STATIC,12,66,82,8
+    LTEXT           "Downloading",IDC_STATIC,12,18,42,8
 END
 
 IDD_UNPACK_DIALOG DIALOGEX 0, 0, 382, 60

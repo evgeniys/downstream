@@ -60,7 +60,7 @@ INT_PTR CALLBACK ProgressDialog::ProgressDialogProc(
 				if (dlg)
 				{
 					dlg->Pause();
-					SetDlgItemText(hwndDlg, IDC_BUTTON_PAUSE, dlg->IsPaused() ? _T("Возобновить") : _T("Приостановить"));
+					SetDlgItemText(hwndDlg, IDC_BUTTON_PAUSE, dlg->IsPaused() ? _T("Resume") : _T("Pause"));
 				}
 				return TRUE;
 			case IDCANCEL:

@@ -377,6 +377,10 @@ void Downloader::Run()
 	if (LoadDownloadState(loaded_file))
 	{
 		EstimateTotalProgressFromList();
+		unsigned int status;
+		unsigned long long downloaded_size, increment;
+		loaded_file.GetDownloadStatus(status, downloaded_size, increment);
+		total_progress_size_ += downloaded_size;
 		iter = FindDescriptor(loaded_file.GetUrl());
 		if (iter != file_desc_list_.end())
 		{
@@ -609,7 +613,7 @@ unsigned int Downloader::DownloadFile(std::string url, WebFile& file)
 	GetTime(ft_start);
 
 	unsigned int status;
-	unsigned long long downloaded_size;
+	unsigned long long downloaded_size, download_size_increment = 0;
 	for ( ; ; )
 	{
 		if (GetTimeDiff(ft_save) >= SAVE_PERIOD)
@@ -647,18 +651,19 @@ unsigned int Downloader::DownloadFile(std::string url, WebFile& file)
 		GetTime(ft_current);
 		unsigned long long increment;
 		file.GetDownloadStatus(status, downloaded_size, increment);
+		download_size_increment += increment;
 		total_progress_size_ += increment;
 		if (WAIT_OBJECT_0 == WaitForSingleObject(pause_event_, 0))
 		{
 			// Re-initialize data for speed calculation, if paused
 			GetTime(ft_start);
-			downloaded_size = 0;
+			download_size_increment = 0;
 		}
 		else
 		{
 			// Do not update progress if paused
-			ShowProgress(StlString(url.begin(), url.end()), 
-				downloaded_size, file.GetSize(), ft_start, ft_current);
+			ShowProgress(StlString(url.begin(), url.end()), downloaded_size, 
+				download_size_increment, file.GetSize(), ft_start, ft_current);
 		}
 		if (file.WaitForFinish(0))
 		{
@@ -789,7 +794,9 @@ __end:
 }
 
 void Downloader::ShowProgress(const StlString& url, 
-							  unsigned long long downloaded_size, unsigned long long file_size, 
+							  unsigned long long file_downloaded_size, 
+							  unsigned long long downloaded_size_increment, 
+							  unsigned long long file_size, 
 							  const FILETIME& ft_start, const FILETIME& ft_current)
 {
 	unsigned int total_progress, file_progress;
@@ -797,18 +804,18 @@ void Downloader::ShowProgress(const StlString& url,
 
 	unsigned long long tmp_total_size = total_size_http_ ? total_size_http_ : total_size_;
 
-	total_progress = (unsigned int)((100 * total_progress_size_ + downloaded_size) / tmp_total_size);
+	total_progress = (unsigned int)((100 * total_progress_size_ /* + file_downloaded_size */) / tmp_total_size);
 
-	file_progress = (unsigned int)((100 * downloaded_size) / file_size);
+	file_progress = (unsigned int)((100 * file_downloaded_size) / file_size);
 
-	// Time, seconds
-	ULONG64 time = (*(ULONG64*)&ft_current - *(ULONG64*)&ft_start) / 10000000;
+	// Time, microseconds
+	ULONG64 time = (*(ULONG64*)&ft_current - *(ULONG64*)&ft_start) / 10;
 
 	// Speed (KB/sec)
 	if (0 == time)
 		speed = 0.0f;
 	else
-		speed = ((double)downloaded_size) / (1024 * time);
+		speed = 1.0e+6 * (((double)downloaded_size_increment) / (1024 * time));
 
 	progress_dlg_->SetDisplayedData(url, speed, file_progress, total_progress);
 }

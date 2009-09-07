@@ -129,7 +129,10 @@ private:
 
 	ProgressDialog *progress_dlg_;
 
-	void ShowProgress(const StlString& url, unsigned long long downloaded_size, unsigned long long file_size,
+	void ShowProgress(const StlString& url, 
+					  unsigned long long file_downloaded_size, 
+					  unsigned long long downloaded_size_increment, 
+					  unsigned long long file_size, 
 					  const FILETIME& ft_start, const FILETIME& ft_current);
 
 	unsigned int UnpackFile(const StlString& fname);
