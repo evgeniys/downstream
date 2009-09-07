@@ -55,10 +55,11 @@ ULONG64 Downloader::EstimateTotalSize()
 {
 	ULONG64 total = 0;
 
-	for (UrlList::iterator iter = url_list_.begin(); iter != url_list_.end(); iter++) 
+	for (FileDescriptorList::iterator iter = file_desc_list_.begin();
+		iter != file_desc_list_.end(); iter++)
 	{
 		ULONG64 size;
-		if (HttpGetFileSize(*iter, size))
+		if (HttpGetFileSize(iter->url_, size))
 			total += size;
 	}
 
@@ -93,7 +94,7 @@ static bool ParseParameters(std::vector <BYTE> buf, __out unsigned int& thread_c
 		pos = new_pos + sizeof(newline) - 1;
 	}
 
-	return thread_count_read && md5_list.size() > 0;
+	return thread_count_read && thread_count > 0 && md5_list.size() > 0;
 }
 
 static bool GetParameters(const std::string& url, __out unsigned int& thread_count, 
