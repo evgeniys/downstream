@@ -156,7 +156,6 @@ FileDescriptorList::iterator Downloader::FindDescriptor(const string& url)
  */
 bool Downloader::GetFileDescriptorList()
 {
-	//FIXME show message
 	bool ret_val = false;
 
 	for (UrlList::iterator url_iter = url_list_.begin(); url_iter != url_list_.end(); url_iter++) 
@@ -177,7 +176,6 @@ bool Downloader::GetFileDescriptorList()
 			ret_val = true;
 		}
 	}
-	//FIXME close message
 	return ret_val;
 }
 
@@ -235,18 +233,6 @@ bool Downloader::IsEnoughFreeSpace()
 
 	return false;
 }
-#if 0
-template <SIMPLE_STRING_PARAM, class T>
-inline bool regex_match(const StlString& s,
-						const basic_regex<B, T>& e,
-						boost::regex_constants::match_flag_type f = boost::regex_constants::match_default)
-{
-	return ::boost::regex_match(s.c_str(),
-		s.s.GetString() + s.GetLength(),
-		e,
-		f);
-}
-#endif
 
 static bool IsPartOfMultipartArchive(const StlString& fname)
 {
@@ -378,7 +364,7 @@ void Downloader::Run()
 
 	progress_dlg_ = new ProgressDialog(pause_event_, continue_event_);
 	progress_dlg_->Create();
-	progress_dlg_->Show(false);
+	progress_dlg_->Show(true);
 
 	total_progress_size_ = 0;
 
@@ -401,7 +387,6 @@ void Downloader::Run()
 			StlString wurl(iter->url_.begin(), iter->url_.end());
 
 			progress_dlg_->SetDisplayedData(wurl, 0, 0, 0);
-			progress_dlg_->Show(true);
 
 			if (DownloadFile(iter->url_, loaded_file))
 			{
@@ -743,7 +728,6 @@ unsigned int Downloader::PerformDownload(FileDescriptor& file_desc)
 	wurl = StlString(file_desc.url_.begin(), file_desc.url_.end());
 
 	progress_dlg_->SetDisplayedData(wurl, 0, 0, 0);
-	progress_dlg_->Show(true);
 
 	WebFile file(file_desc.url_, file_desc.file_name_, file_desc.thread_count_, 
 		pause_event_, continue_event_, stop_event_);
