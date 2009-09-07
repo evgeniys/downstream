@@ -18,6 +18,7 @@
 #include "engine/webfilesegment.h"
 #include "gui/message.h"
 #include "gui/progressdialog.h"
+#include "gui/unpackdialog.h"
 #include "gui/selectfolder.h"
 #include "common/misc.h"
 #include "engine/md5.h"
@@ -36,6 +37,7 @@ Downloader::Downloader(const UrlList &url_list, unsigned long long total_size)
 	continue_event_ = CreateEvent(NULL, TRUE, FALSE, NULL);
 	stop_event_ = CreateEvent(NULL, TRUE, FALSE, NULL);
 	progress_dlg_ = NULL;
+	unpack_dlg_ = NULL;
 	init_ok_ = (NULL != pause_event_ 
 		&& NULL != continue_event_
 		&& NULL != stop_event_);
@@ -494,6 +496,17 @@ __next_iteration:
 	bool unpack_success = true;
 	bool at_least_one_archive = false;
 	// Process file_name list (try to unpack files)
+
+	unpack_dlg_ = new UnpackDialog();
+	unpack_dlg_->Create();
+	unpack_dlg_->Show(true);
+
+	unsigned int total_file_count = 0, file_num = 0;
+	for (FileDescriptorList::iterator iter = file_desc_list_.begin(); 
+			iter != file_desc_list_.end(); iter++)
+		if (iter->finished_ && !IsPartOfMultipartArchive(iter->file_name_))
+			total_file_count++;
+
 	for (FileDescriptorList::iterator iter = file_desc_list_.begin(); 
 		iter != file_desc_list_.end(); iter++)
 	{
@@ -501,6 +514,21 @@ __next_iteration:
 		{
 			unsigned int unpack_result;
 			unpack_result = UnpackFile(iter->file_name_);
+
+			// Show progress
+			file_num++;
+			unsigned int unpack_progress = (file_num * 100) / total_file_count;
+			unpack_dlg_->SetDisplayedData(unpack_progress);
+
+			// Check if unpack dialog is closed
+			if (unpack_dlg_->WaitForClosing(0))
+			{
+				unpack_dlg_->Close();
+				unpack_dlg_->WaitForClosing(INFINITE);
+				delete unpack_dlg_;
+				return;
+			}
+
 			if (UNPACK_NO_SPACE == unpack_result)
 			{
 				Message::Show(_T("Insufficient disk space to perform file\r\n")
@@ -517,6 +545,11 @@ __next_iteration:
 		if (!unpack_success)
 			break;
 	}
+
+	unpack_dlg_->Close();
+	unpack_dlg_->WaitForClosing(INFINITE);
+	delete unpack_dlg_;
+
 	if (at_least_one_archive)
 	{	
 		if (unpack_success)
@@ -525,6 +558,7 @@ __next_iteration:
 			Message::Show(_T("Error while unpacking files\r\n.")
 						  _T("\r\n. Please restart program to download files again"));
 	}
+
 }
 
 static void GetTime(__out FILETIME& ft)

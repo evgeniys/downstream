@@ -13,8 +13,10 @@ using namespace std;
 #define WM_USER_SETPROGRESS (WM_USER + 3)
 #define WM_USER_SHOWWND     (WM_USER + 4)
 #define WM_USER_CLOSE (WM_USER + 5)
+#define WM_TRAY_MESSAGE     (WM_USER + 6)
 
 static ProgressDialog *dlg = NULL;
+
 
 INT_PTR CALLBACK ProgressDialog::ProgressDialogProc(      
 							HWND hwndDlg,
@@ -25,6 +27,38 @@ INT_PTR CALLBACK ProgressDialog::ProgressDialogProc(
 {
 	switch (uMsg)
 	{
+	case WM_INITDIALOG:
+		{
+			// Set icon for dialog
+			SendMessage(hwndDlg, WM_SETICON, ICON_SMALL, (LPARAM)dlg->icon_handle_);
+			// Create tray icon
+			memset(&dlg->nid_, 0, sizeof(dlg->nid_));
+			dlg->nid_.cbSize = sizeof(dlg->nid_);
+			dlg->nid_.hWnd = hwndDlg;
+			dlg->nid_.hIcon = dlg->icon_handle_;
+			dlg->nid_.uID = 1;
+			dlg->nid_.uCallbackMessage = WM_TRAY_MESSAGE;
+			_tcsncpy(dlg->nid_.szTip, _T("Downloader"), _countof(dlg->nid_.szTip));
+			dlg->nid_.uFlags = NIF_ICON | NIF_TIP | NIF_MESSAGE;
+			Shell_NotifyIcon(NIM_ADD, &dlg->nid_);
+		}
+		return TRUE;
+	case WM_TRAY_MESSAGE:
+		{
+			if (1 == wParam)
+			{
+				switch(lParam)
+				{
+				case WM_LBUTTONDBLCLK:
+				case WM_RBUTTONDBLCLK:
+					ShowWindow(hwndDlg, SW_SHOW);
+					return TRUE;
+				}
+			}
+
+		}
+		break;
+
 	case WM_USER_SETMESSAGE:
 		{
 			TCHAR *text = (TCHAR*)wParam;
@@ -44,6 +78,7 @@ INT_PTR CALLBACK ProgressDialog::ProgressDialogProc(
 		return TRUE;
 
 	case WM_USER_CLOSE:
+		Shell_NotifyIcon(NIM_DELETE, &dlg->nid_);
 		DestroyWindow(hwndDlg); 
 		PostQuitMessage(0);
 		return TRUE;
@@ -53,8 +88,7 @@ INT_PTR CALLBACK ProgressDialog::ProgressDialogProc(
 			switch(LOWORD(wParam))
 			{
 			case IDC_BUTTON_TRAY:
-				//ShowWindow(hwndDlg, SW_HIDE);
-				//FIXME send to tray
+				ShowWindow(hwndDlg, SW_HIDE);
 				return TRUE;
 			case IDC_BUTTON_PAUSE:
 				if (dlg)
@@ -64,6 +98,7 @@ INT_PTR CALLBACK ProgressDialog::ProgressDialogProc(
 				}
 				return TRUE;
 			case IDCANCEL:
+				Shell_NotifyIcon(NIM_DELETE, &dlg->nid_);
 				DestroyWindow(hwndDlg); 
 				PostQuitMessage(0);
 				return TRUE;
@@ -71,8 +106,11 @@ INT_PTR CALLBACK ProgressDialog::ProgressDialogProc(
 		}
 
 	default:
+		if (uMsg == dlg->msg_taskbar_created_)
+			Shell_NotifyIcon(NIM_ADD, &dlg->nid_);
 		return FALSE;
 	}
+	return FALSE;
 }
 
 ProgressDialog::ProgressDialog(HANDLE pause_event, 
@@ -99,6 +137,10 @@ unsigned __stdcall ProgressDialog::ProgressDialogThread(void *arg)
 	if (!dlg)
 		goto __end;
 	HINSTANCE instance = GetModuleHandle(NULL);
+
+	dlg->icon_handle_ = LoadIcon(instance,  MAKEINTRESOURCE(IDI_MAIN));
+	dlg->msg_taskbar_created_ = RegisterWindowMessage(_T("TaskbarCreated"));
+
 	dlg->hwnd_ = CreateDialogParam(instance, 
 		MAKEINTRESOURCE(IDD_PROGRESS_DIALOG),
 		NULL, ProgressDialogProc, 0);
@@ -114,9 +156,7 @@ unsigned __stdcall ProgressDialog::ProgressDialogThread(void *arg)
 	while ((bRet = GetMessage(&msg, NULL, 0, 0)) != 0) 
 	{ 
 		if (bRet == -1)
-		{
 			break;
-		}
 		if(!IsDialogMessage(dlg->hwnd_, &msg))
 		{ 
 			TranslateMessage(&msg); 
@@ -158,7 +198,7 @@ bool ProgressDialog::Close()
 	return true;
 }
 
-StlString GetUserMessage(const StlString &fname, double speed)
+static StlString GetUserMessage(const StlString &fname, double speed)
 {
 	TCHAR msg_str[1024];
 	if (0.0f == speed)

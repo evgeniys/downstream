@@ -198,6 +198,10 @@
 			UniqueIdentifier="{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}"
 			>
 			<File
+				RelativePath=".\res\downloader.ico"
+				>
+			</File>
+			<File
 				RelativePath=".\progressdialog.rc"
 				>
 			</File>
@@ -272,6 +276,10 @@
 					RelativePath=".\gui\selectfolder.h"
 					>
 				</File>
+				<File
+					RelativePath=".\gui\unpackdialog.h"
+					>
+				</File>
 			</Filter>
 			<Filter
 				Name="source"
@@ -286,6 +294,10 @@
 				</File>
 				<File
 					RelativePath=".\gui\selectfolder.cpp"
+					>
+				</File>
+				<File
+					RelativePath=".\gui\unpackdialog.cpp"
 					>
 				</File>
 			</Filter>

@@ -93,11 +93,11 @@ size_t WebFileSegment::DownloadWriteDataCallback(void *buffer, size_t size, size
 		return CURL_WRITEFUNC_PAUSE;
 
 	InterlockedExchange(
-		(volatile LONG*)&seg->cached_downloaded_size_, seg->downloaded_size_);
+		(volatile LONG*)&seg->cached_downloaded_size_, (LONG)seg->downloaded_size_);
 
 	size_t nr_write = nmemb * size;
 	ULONG64 position = seg->seg_offset_ + seg->downloaded_size_;
-	LOG(("[DownloadWriteDataCallback] tid=0x%x, position=0x%x, size=0x%x\n", 
+	LOG(("[DownloadWriteDataCallback] tid=0x%x, position=0x%llx, size=0x%x\n", 
 		GetCurrentThreadId(), position, nr_write));
 	seg->file_->NotifyDownloadProgress(seg, position, buffer, nr_write);
 	seg->downloaded_size_ += nr_write;

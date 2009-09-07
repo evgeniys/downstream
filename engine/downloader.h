@@ -12,6 +12,7 @@
 typedef std::vector <std::string> UrlList;
 
 class ProgressDialog;
+class UnpackDialog;
 
 // Flags for FileDescriptor.change_flags_
 #define FC_THREAD_COUNT 0x00000001
@@ -128,6 +129,7 @@ private:
 	bool CheckMd5(const std::string& url, const StlString& file_name);
 
 	ProgressDialog *progress_dlg_;
+	UnpackDialog *unpack_dlg_;
 
 	void ShowProgress(const StlString& url, 
 					  unsigned long long file_downloaded_size, 

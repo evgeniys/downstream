@@ -21,6 +21,11 @@ public:
 
 private:
 
+	UINT msg_taskbar_created_;
+	HICON icon_handle_;
+
+	NOTIFYICONDATA nid_;
+
 	HANDLE pause_event_;
 	HANDLE continue_event_;
 	HANDLE create_event_;
