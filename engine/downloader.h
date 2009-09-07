@@ -93,6 +93,8 @@ private:
 
 	FileDescriptorList::iterator FindDescriptor(const std::string& url);
 
+	void DeleteChangedFiles();
+
 	bool CheckFileDescriptors(const std::string& current_url, 
 							  __out bool& md5_changed, 
 							  __out bool& thread_count_changed, 

@@ -306,6 +306,17 @@ FileDescriptorList::iterator Downloader::FindChangedMd5Descriptor()
 	return iter;
 }
 
+void Downloader::DeleteChangedFiles()
+{
+	FileDescriptorList::iterator iter;
+
+	for (iter = file_desc_list_.begin(); iter != file_desc_list_.end(); iter++) 
+	{
+		if (iter->change_flags_ & FC_MD5)
+			DeleteFile(iter->file_name_.c_str());
+	}
+}
+
 bool Downloader::CheckNotFinishedDownloads()
 {
 	for (FileDescriptorList::iterator iter = file_desc_list_.begin();
@@ -467,6 +478,8 @@ __restart:
 				StlString(_T("Certain files have been changed on the server during \r\n")
 				_T("the download process. They will be redownloaded.")));
 
+			DeleteChangedFiles();
+
 			// Roll back to changed MD5.
 			iter = FindChangedMd5Descriptor();
 			continue;
@@ -493,9 +506,9 @@ __next_iteration:
 
 	EraseDownloadState();
 
+	// Process file_name list (try to unpack files)
 	bool unpack_success = true;
 	bool at_least_one_archive = false;
-	// Process file_name list (try to unpack files)
 
 	unpack_dlg_ = new UnpackDialog();
 	unpack_dlg_->Create();
