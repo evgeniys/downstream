@@ -205,7 +205,7 @@ static StlString GetUserMessage(const StlString &fname, double speed)
 	if (0.0f == speed)
 		_sntprintf(msg_str, _countof(msg_str), _T("%s"), fname.c_str());
 	else
-		_sntprintf(msg_str, _countof(msg_str), _T("%s (%.0lf Κα/ρ)"), fname.c_str(), speed);
+		_sntprintf(msg_str, _countof(msg_str), _T("%s (%.0lf Kb/sec)"), fname.c_str(), speed);
 	StlString str = StlString(msg_str);
 	return str;
 }
