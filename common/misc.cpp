@@ -154,7 +154,7 @@ static size_t HttpWriteDataDynamic(void *buffer, size_t size, size_t nmemb, void
 
 	while (rd->position_ + nr_write > rd->buf_.size())
 	{
-		// Assume that file can not be greater than 2GB
+		// Assume that file can not be greater than 256MB
 		if (2 * rd->buf_.size() > 0x10000000)
 			return 0;
 		rd->buf_.resize(2 * rd->buf_.size());
