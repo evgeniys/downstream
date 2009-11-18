@@ -142,6 +142,64 @@ bool HttpReadFileToBuffer(const std::string& url, void *buf, size_t size, __out 
 	return ret_val;
 }
 
+typedef struct _HTTP_READ_DATA_DYNAMIC {
+	std::vector<BYTE> buf_;
+	size_t position_;
+} HTTP_READ_DATA_DYNAMIC, *PHTTP_READ_DATA_DYNAMIC;
+
+static size_t HttpWriteDataDynamic(void *buffer, size_t size, size_t nmemb, void *userp)
+{
+	PHTTP_READ_DATA_DYNAMIC rd = (PHTTP_READ_DATA_DYNAMIC)userp;
+	size_t nr_write = nmemb * size;
+
+	while (rd->position_ + nr_write > rd->buf_.size())
+	{
+		// Assume that file can not be greater than 2GB
+		if (2 * rd->buf_.size() > 0x10000000)
+			return 0;
+		rd->buf_.resize(2 * rd->buf_.size());
+	}
+
+	memcpy(&rd->buf_[0], buffer, nr_write);
+	rd->position_ += nr_write;
+
+	return nmemb;
+}
+
+bool HttpReadFileDynamic(const std::string& url, std::vector<BYTE>& buf)
+{
+	bool ret_val = false;
+	HTTP_READ_DATA_DYNAMIC rd;
+
+	rd.position_ = 0;
+	rd.buf_.resize(1);
+
+	CURL *http_handle = curl_easy_init();
+
+	if (!http_handle)
+		return false;
+
+	curl_easy_setopt(http_handle, CURLOPT_URL, url.c_str());
+	curl_easy_setopt(http_handle, CURLOPT_MAXREDIRS, 500);
+	curl_easy_setopt(http_handle, CURLOPT_FOLLOWLOCATION, 1);
+
+	curl_easy_setopt(http_handle, CURLOPT_WRITEFUNCTION, HttpWriteDataDynamic); 
+	curl_easy_setopt(http_handle, CURLOPT_WRITEDATA, &rd);
+	SetProxyForHttpHandle(http_handle);
+
+	ret_val = (0 == curl_easy_perform(http_handle));
+
+	if (ret_val)
+	{
+		buf.resize(rd.position_);
+		memcpy(&buf[0], &rd.buf_[0], rd.position_);
+	}
+
+	curl_easy_cleanup(http_handle);
+
+	return ret_val;
+}
+
 /**
  *	Gets HTTP proxy server from system registry.
  *	@param	proxy [out]		Proxy server in format "proxy[:port]"
